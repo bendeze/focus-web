@@ -1,4 +1,8 @@
-# Python
+# ==============================================================================
+# Monorepo .gitignore: Backend, Web, and Mobile
+# ==============================================================================
+
+# --- Python & Backend ---
 __pycache__/
 *.py[cod]
 *$py.class
@@ -8,26 +12,53 @@ env/
 venv/
 .venv/
 ENV/
-
-# Environment variables & secrets
-.env
-.env.*
-!.env.example
-
-# Database
 *.db
 *.sqlite
 *.sqlite3
 focus.db
-
-# Testing & Coverage
 .pytest_cache/
 .coverage
 htmlcov/
-
-# FastAPI Cloud & IDE
 .fastapicloud/
-.agents/
-.gemini/
+
+# --- Environment & Secrets ---
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+
+# --- Web & Node.js ---
+node_modules/
+dist/
+build/
+.next/
+.turbo/
+.npm
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# --- Android & Mobile ---
+.gradle/
+build/
+app/build/
+local.properties
+*.apk
+*.aab
+*.ap_
+*.dex
+.cxx/
+captures/
+
+# --- IDEs & System ---
 .idea/
 .vscode/
+*.swp
+*.swo
+.DS_Store
+Thumbs.db
+.agents/
+.gemini/
+

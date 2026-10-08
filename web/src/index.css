@@ -1,0 +1,88 @@
+@import "tailwindcss";
+
+@layer base {
+  :root {
+    --font-sans: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  }
+  
+  html {
+    color-scheme: dark;
+  }
+  
+  html.light {
+    color-scheme: light;
+  }
+
+  body {
+    overflow-x: hidden;
+    font-family: var(--font-sans);
+  }
+
+  /* Tabular Numerals for jitter-free countdowns */
+  .tabular-nums {
+    font-variant-numeric: tabular-nums;
+  }
+}
+
+/* Custom theme utilities matching the mobile design tokens */
+@utility bg-canvas-dark {
+  background-color: #000000;
+}
+@utility bg-canvas-light {
+  background-color: #FFFFFF;
+}
+
+@utility bg-surface-dark {
+  background-color: #141416;
+}
+@utility bg-surface-light {
+  background-color: #F5F5F7;
+}
+
+@utility bg-item-dark {
+  background-color: #222226;
+}
+@utility bg-item-light {
+  background-color: #EAEAEA;
+}
+
+@utility border-subtle-dark {
+  border-color: #2A2A2E;
+}
+@utility border-subtle-light {
+  border-color: #E0E0E5;
+}
+
+/* Minimalist sleek scrollbar */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.dark ::-webkit-scrollbar-thumb {
+  background: #2a2a2e;
+  border-radius: 9999px;
+}
+
+.dark ::-webkit-scrollbar-thumb:hover {
+  background: #38383e;
+}
+
+.light ::-webkit-scrollbar-thumb {
+  background: #e0e0e0;
+  border-radius: 9999px;
+}
+
+.light ::-webkit-scrollbar-thumb:hover {
+  background: #cccccc;
+}
+
+/* Glassmorphism backdrop utility */
+.backdrop-glass {
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+}

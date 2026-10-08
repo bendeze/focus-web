@@ -1,0 +1,230 @@
+import type { AuthResponse, FocusSession, FocusStats, Project, Task, User } from '../types';
+
+
+const DEFAULT_API_URL = import.meta.env.VITE_API_URL || 'http://127.0.0.1:8000';
+export function getBaseUrl(): string {
+  return localStorage.getItem('focus_api_url') || DEFAULT_API_URL;
+}
+
+export function setBaseUrl(url: string): void {
+  localStorage.setItem('focus_api_url', url.trim());
+}
+
+function getHeaders(token?: string | null): HeadersInit {
+  const headers: HeadersInit = {
+    'Content-Type': 'application/json',
+  };
+  const activeToken = token || localStorage.getItem('focus_token');
+  if (activeToken) {
+    headers['Authorization'] = `Bearer ${activeToken}`;
+  }
+  return headers;
+}
+
+async function handleResponse<T>(res: Response): Promise<T> {
+  if (res.status === 204) {
+    return {} as T;
+  }
+  if (!res.ok) {
+    let errorDetail = `Request failed (${res.status})`;
+    try {
+      const errorJson = await res.json();
+      if (typeof errorJson.detail === 'string') {
+        errorDetail = errorJson.detail;
+      } else if (Array.isArray(errorJson.detail)) {
+        errorDetail = errorJson.detail.map((e: any) => e.msg || e.message || JSON.stringify(e)).join(', ');
+      }
+    } catch {
+      errorDetail = res.statusText || errorDetail;
+    }
+    throw new Error(errorDetail);
+  }
+  return res.json();
+}
+
+export const api = {
+  async register(data: { username?: string; email?: string; password: string; full_name?: string }): Promise<AuthResponse> {
+    const res = await fetch(`${getBaseUrl()}/api/v1/auth/register`, {
+      method: 'POST',
+      headers: getHeaders(),
+      body: JSON.stringify(data),
+    });
+    return handleResponse<AuthResponse>(res);
+  },
+
+  async login(data: { identifier: string; password: string }): Promise<AuthResponse> {
+    const res = await fetch(`${getBaseUrl()}/api/v1/auth/login`, {
+      method: 'POST',
+      headers: getHeaders(),
+      body: JSON.stringify(data),
+    });
+    return handleResponse<AuthResponse>(res);
+  },
+
+  async getMe(): Promise<User> {
+    const res = await fetch(`${getBaseUrl()}/api/v1/auth/me`, {
+      headers: getHeaders(),
+    });
+    return handleResponse<User>(res);
+  },
+
+  async updateProfile(data: { full_name?: string; avatar_url?: string }): Promise<User> {
+    const res = await fetch(`${getBaseUrl()}/api/v1/auth/me`, {
+      method: 'PATCH',
+      headers: getHeaders(),
+      body: JSON.stringify(data),
+    });
+    return handleResponse<User>(res);
+  },
+
+  async changePassword(data: { current_password: string; new_password: string }): Promise<{ message: string }> {
+    const res = await fetch(`${getBaseUrl()}/api/v1/auth/change-password`, {
+      method: 'POST',
+      headers: getHeaders(),
+      body: JSON.stringify(data),
+    });
+    return handleResponse<{ message: string }>(res);
+  },
+
+  async listProjects(params?: { status?: string; updated_after?: string }): Promise<Project[]> {
+    const url = new URL(`${getBaseUrl()}/api/v1/projects`);
+    if (params?.status) url.searchParams.set('status', params.status);
+    if (params?.updated_after) url.searchParams.set('updated_after', params.updated_after);
+    const res = await fetch(url.toString(), {
+      headers: getHeaders(),
+    });
+    return handleResponse<Project[]>(res);
+  },
+
+  async createProject(data: { title: string; description?: string; color?: string; icon?: string }): Promise<Project> {
+    const res = await fetch(`${getBaseUrl()}/api/v1/projects`, {
+      method: 'POST',
+      headers: getHeaders(),
+      body: JSON.stringify(data),
+    });
+    return handleResponse<Project>(res);
+  },
+
+  async updateProject(id: string, data: Partial<Project>): Promise<Project> {
+    const res = await fetch(`${getBaseUrl()}/api/v1/projects/${id}`, {
+      method: 'PATCH',
+      headers: getHeaders(),
+      body: JSON.stringify(data),
+    });
+    return handleResponse<Project>(res);
+  },
+
+  async deleteProject(id: string): Promise<void> {
+    const res = await fetch(`${getBaseUrl()}/api/v1/projects/${id}`, {
+      method: 'DELETE',
+      headers: getHeaders(),
+    });
+    return handleResponse<void>(res);
+  },
+
+  async listTasks(params?: { project_id?: string; standalone?: boolean; status?: string; priority?: string; updated_after?: string }): Promise<Task[]> {
+    const url = new URL(`${getBaseUrl()}/api/v1/tasks`);
+    if (params?.project_id) url.searchParams.set('project_id', params.project_id);
+    if (params?.standalone) url.searchParams.set('standalone', 'true');
+    if (params?.status) url.searchParams.set('status', params.status);
+    if (params?.priority) url.searchParams.set('priority', params.priority);
+    if (params?.updated_after) url.searchParams.set('updated_after', params.updated_after);
+    const res = await fetch(url.toString(), {
+      headers: getHeaders(),
+    });
+    return handleResponse<Task[]>(res);
+  },
+
+  async createTask(data: { title: string; description?: string; project_id?: string | null; priority?: string; estimated_minutes?: number }): Promise<Task> {
+    const res = await fetch(`${getBaseUrl()}/api/v1/tasks`, {
+      method: 'POST',
+      headers: getHeaders(),
+      body: JSON.stringify(data),
+    });
+    return handleResponse<Task>(res);
+  },
+
+  async updateTask(id: string, data: Partial<Task>): Promise<Task> {
+    const res = await fetch(`${getBaseUrl()}/api/v1/tasks/${id}`, {
+      method: 'PATCH',
+      headers: getHeaders(),
+      body: JSON.stringify(data),
+    });
+    return handleResponse<Task>(res);
+  },
+
+  async deleteTask(id: string): Promise<void> {
+    const res = await fetch(`${getBaseUrl()}/api/v1/tasks/${id}`, {
+      method: 'DELETE',
+      headers: getHeaders(),
+    });
+    return handleResponse<void>(res);
+  },
+
+  async startFocusSession(data: { task_id: string; duration_minutes?: number; auto_complete_task?: boolean }): Promise<FocusSession> {
+    const res = await fetch(`${getBaseUrl()}/api/v1/focus/start`, {
+      method: 'POST',
+      headers: getHeaders(),
+      body: JSON.stringify(data),
+    });
+    return handleResponse<FocusSession>(res);
+  },
+
+  async getCurrentFocusSession(): Promise<FocusSession | null> {
+    const res = await fetch(`${getBaseUrl()}/api/v1/focus/current`, {
+      headers: getHeaders(),
+    });
+    return handleResponse<FocusSession | null>(res);
+  },
+
+  async pauseFocusSession(id: string): Promise<FocusSession> {
+    const res = await fetch(`${getBaseUrl()}/api/v1/focus/${id}/pause`, {
+      method: 'POST',
+      headers: getHeaders(),
+    });
+    return handleResponse<FocusSession>(res);
+  },
+
+  async resumeFocusSession(id: string): Promise<FocusSession> {
+    const res = await fetch(`${getBaseUrl()}/api/v1/focus/${id}/resume`, {
+      method: 'POST',
+      headers: getHeaders(),
+    });
+    return handleResponse<FocusSession>(res);
+  },
+
+  async completeFocusSession(id: string, data?: { actual_focus_seconds?: number; notes?: string }): Promise<FocusSession> {
+    const res = await fetch(`${getBaseUrl()}/api/v1/focus/${id}/complete`, {
+      method: 'POST',
+      headers: getHeaders(),
+      body: JSON.stringify(data || {}),
+    });
+    return handleResponse<FocusSession>(res);
+  },
+
+  async cancelFocusSession(id: string): Promise<FocusSession> {
+    const res = await fetch(`${getBaseUrl()}/api/v1/focus/${id}/cancel`, {
+      method: 'POST',
+      headers: getHeaders(),
+    });
+    return handleResponse<FocusSession>(res);
+  },
+
+  async getFocusStats(): Promise<FocusStats> {
+    const res = await fetch(`${getBaseUrl()}/api/v1/focus/stats`, {
+      headers: getHeaders(),
+    });
+    return handleResponse<FocusStats>(res);
+  },
+
+  async listFocusSessions(params?: { task_id?: string; status?: string; updated_after?: string }): Promise<FocusSession[]> {
+    const url = new URL(`${getBaseUrl()}/api/v1/focus/sessions`);
+    if (params?.task_id) url.searchParams.set('task_id', params.task_id);
+    if (params?.status) url.searchParams.set('status', params.status);
+    if (params?.updated_after) url.searchParams.set('updated_after', params.updated_after);
+    const res = await fetch(url.toString(), {
+      headers: getHeaders(),
+    });
+    return handleResponse<FocusSession[]>(res);
+  },
+};

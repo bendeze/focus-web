@@ -1,0 +1,33 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+env/
+venv/
+.venv/
+ENV/
+
+# Environment variables & secrets
+.env
+.env.*
+!.env.example
+
+# Database
+*.db
+*.sqlite
+*.sqlite3
+focus.db
+
+# Testing & Coverage
+.pytest_cache/
+.coverage
+htmlcov/
+
+# FastAPI Cloud & IDE
+.fastapicloud/
+.agents/
+.gemini/
+.idea/
+.vscode/

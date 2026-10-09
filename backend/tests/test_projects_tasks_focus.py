@@ -384,3 +384,92 @@ def test_idempotency_focus_and_tasks(client: TestClient):
     assert len(sync_sess) == 1
     assert sync_sess[0]["is_deleted"] is True
 
+
+def test_x_idempotency_key_creation_endpoints(client: TestClient):
+    import uuid
+    headers, _ = _get_auth_headers(client, "idempotency_tester")
+
+    # 1. Project creation idempotency
+    proj_key = str(uuid.uuid4())
+    headers_proj = {**headers, "X-Idempotency-Key": proj_key}
+
+    res1 = client.post(
+        "/api/v1/projects",
+        headers=headers_proj,
+        json={"title": "Idempotent Project", "description": "Safe retry"}
+    )
+    assert res1.status_code == 201
+    proj1 = res1.json()
+    assert proj1["id"] == proj_key
+    assert proj1["title"] == "Idempotent Project"
+
+    # Retry project creation with the exact same X-Idempotency-Key
+    res2 = client.post(
+        "/api/v1/projects",
+        headers=headers_proj,
+        json={"title": "Idempotent Project", "description": "Safe retry"}
+    )
+    assert res2.status_code == 201
+    proj2 = res2.json()
+    assert proj2["id"] == proj_key
+    assert proj2["title"] == "Idempotent Project"
+
+    # 2. Task creation idempotency
+    task_key = str(uuid.uuid4())
+    headers_task = {**headers, "X-Idempotency-Key": task_key}
+
+    t_res1 = client.post(
+        "/api/v1/tasks",
+        headers=headers_task,
+        json={"title": "Idempotent Task", "project_id": proj_key, "estimated_minutes": 30}
+    )
+    assert t_res1.status_code == 201
+    task1 = t_res1.json()
+    assert task1["id"] == task_key
+
+    # Retry task creation with the exact same X-Idempotency-Key
+    t_res2 = client.post(
+        "/api/v1/tasks",
+        headers=headers_task,
+        json={"title": "Idempotent Task", "project_id": proj_key, "estimated_minutes": 30}
+    )
+    assert t_res2.status_code == 201
+    task2 = t_res2.json()
+    assert task2["id"] == task_key
+
+    # 3. Focus session start idempotency
+    sess_key = str(uuid.uuid4())
+    headers_sess = {**headers, "X-Idempotency-Key": sess_key}
+
+    s_res1 = client.post(
+        "/api/v1/focus/start",
+        headers=headers_sess,
+        json={"task_id": task_key, "duration_minutes": 30}
+    )
+    assert s_res1.status_code == 201
+    sess1 = s_res1.json()
+    assert sess1["id"] == sess_key
+    assert sess1["status"] == "active"
+
+    # Retry focus session start with the exact same X-Idempotency-Key (should return same session without 400 error)
+    s_res2 = client.post(
+        "/api/v1/focus/start",
+        headers=headers_sess,
+        json={"task_id": task_key, "duration_minutes": 30}
+    )
+    assert s_res2.status_code == 201
+    sess2 = s_res2.json()
+    assert sess2["id"] == sess_key
+    assert sess2["status"] == "active"
+
+    # 4. Invalid X-Idempotency-Key format should return 400 Bad Request
+    invalid_headers = {**headers, "X-Idempotency-Key": "invalid-uuid-string"}
+    inv_res = client.post(
+        "/api/v1/projects",
+        headers=invalid_headers,
+        json={"title": "Invalid Key Project"}
+    )
+    assert inv_res.status_code == 400
+    assert "Invalid X-Idempotency-Key format" in inv_res.json()["detail"]
+
+

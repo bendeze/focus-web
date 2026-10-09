@@ -96,10 +96,14 @@ export const api = {
     return handleResponse<Project[]>(res);
   },
 
-  async createProject(data: { title: string; description?: string; color?: string; icon?: string }): Promise<Project> {
+  async createProject(data: { title: string; description?: string; color?: string; icon?: string }, idempotencyKey?: string): Promise<Project> {
+    const headers: Record<string, string> = { ...getHeaders() as Record<string, string> };
+    if (idempotencyKey) {
+      headers['X-Idempotency-Key'] = idempotencyKey;
+    }
     const res = await fetch(`${getBaseUrl()}/api/v1/projects`, {
       method: 'POST',
-      headers: getHeaders(),
+      headers,
       body: JSON.stringify(data),
     });
     return handleResponse<Project>(res);
@@ -135,10 +139,14 @@ export const api = {
     return handleResponse<Task[]>(res);
   },
 
-  async createTask(data: { title: string; description?: string; project_id?: string | null; priority?: string; estimated_minutes?: number }): Promise<Task> {
+  async createTask(data: { title: string; description?: string; project_id?: string | null; priority?: string; estimated_minutes?: number }, idempotencyKey?: string): Promise<Task> {
+    const headers: Record<string, string> = { ...getHeaders() as Record<string, string> };
+    if (idempotencyKey) {
+      headers['X-Idempotency-Key'] = idempotencyKey;
+    }
     const res = await fetch(`${getBaseUrl()}/api/v1/tasks`, {
       method: 'POST',
-      headers: getHeaders(),
+      headers,
       body: JSON.stringify(data),
     });
     return handleResponse<Task>(res);
@@ -161,10 +169,14 @@ export const api = {
     return handleResponse<void>(res);
   },
 
-  async startFocusSession(data: { task_id: string; duration_minutes?: number; auto_complete_task?: boolean }): Promise<FocusSession> {
+  async startFocusSession(data: { task_id: string; duration_minutes?: number; auto_complete_task?: boolean }, idempotencyKey?: string): Promise<FocusSession> {
+    const headers: Record<string, string> = { ...getHeaders() as Record<string, string> };
+    if (idempotencyKey) {
+      headers['X-Idempotency-Key'] = idempotencyKey;
+    }
     const res = await fetch(`${getBaseUrl()}/api/v1/focus/start`, {
       method: 'POST',
-      headers: getHeaders(),
+      headers,
       body: JSON.stringify(data),
     });
     return handleResponse<FocusSession>(res);

@@ -1,7 +1,7 @@
 import uuid
 from datetime import datetime, timezone
 from typing import Annotated, Optional
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, Depends, Header, HTTPException, Query, status
 from sqlmodel import Session, select, func
 
 from app.api.deps import get_current_user
@@ -72,9 +72,35 @@ def create_project(
     project_in: ProjectCreate,
     current_user: Annotated[User, Depends(get_current_user)],
     db: Annotated[Session, Depends(get_db)],
+    x_idempotency_key: Annotated[
+        Optional[str],
+        Header(
+            alias="X-Idempotency-Key",
+            description="Optional UUID idempotency key for safe offline retry",
+        ),
+    ] = None,
 ) -> ProjectResponse:
+    parsed_id: Optional[uuid.UUID] = None
+    if x_idempotency_key:
+        try:
+            parsed_id = uuid.UUID(x_idempotency_key)
+        except ValueError:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Invalid X-Idempotency-Key format. Must be a valid UUID string."
+            )
+        existing_project = db.get(Project, parsed_id)
+        if existing_project:
+            if existing_project.user_id != current_user.id:
+                raise HTTPException(
+                    status_code=status.HTTP_409_CONFLICT,
+                    detail="Idempotency key collision with another user's project"
+                )
+            return _calculate_project_stats(db, existing_project)
+
     now = datetime.now(timezone.utc)
     project = Project(
+        id=parsed_id or uuid.uuid4(),
         user_id=current_user.id,
         title=project_in.title,
         description=project_in.description,

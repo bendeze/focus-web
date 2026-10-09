@@ -1,7 +1,7 @@
 import uuid
 from datetime import datetime, timezone
 from typing import Annotated, Optional
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, Depends, Header, HTTPException, Query, status
 from sqlmodel import Session, select, or_
 
 from app.api.deps import get_current_user
@@ -29,7 +29,33 @@ def start_focus_session(
     focus_in: FocusStartRequest,
     current_user: Annotated[User, Depends(get_current_user)],
     db: Annotated[Session, Depends(get_db)],
+    x_idempotency_key: Annotated[
+        Optional[str],
+        Header(
+            alias="X-Idempotency-Key",
+            description="Optional UUID idempotency key for safe offline retry",
+        ),
+    ] = None,
 ) -> FocusSessionResponse:
+    parsed_id: Optional[uuid.UUID] = None
+    if x_idempotency_key:
+        try:
+            parsed_id = uuid.UUID(x_idempotency_key)
+        except ValueError:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Invalid X-Idempotency-Key format. Must be a valid UUID string."
+            )
+        # Check if session with this idempotency key was already created for this user
+        existing_session = db.get(FocusSession, parsed_id)
+        if existing_session:
+            if existing_session.user_id != current_user.id:
+                raise HTTPException(
+                    status_code=status.HTTP_409_CONFLICT,
+                    detail="Idempotency key collision with another user's focus session"
+                )
+            return FocusSessionResponse.model_validate(existing_session)
+
     # 1. Validate task ownership and active state
     task = db.get(Task, focus_in.task_id)
     if not task or task.user_id != current_user.id or task.is_deleted:
@@ -68,6 +94,7 @@ def start_focus_session(
     auto_complete = True if focus_in.auto_complete_task is None else focus_in.auto_complete_task
 
     session = FocusSession(
+        id=parsed_id or uuid.uuid4(),
         user_id=current_user.id,
         task_id=task.id,
         duration_minutes=duration,

@@ -1,7 +1,7 @@
 import uuid
 from datetime import datetime, timezone
 from typing import Annotated, Optional
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, Depends, Header, HTTPException, Query, status
 from sqlmodel import Session, select
 
 from app.api.deps import get_current_user
@@ -62,7 +62,32 @@ def create_task(
     task_in: TaskCreate,
     current_user: Annotated[User, Depends(get_current_user)],
     db: Annotated[Session, Depends(get_db)],
+    x_idempotency_key: Annotated[
+        Optional[str],
+        Header(
+            alias="X-Idempotency-Key",
+            description="Optional UUID idempotency key for safe offline retry",
+        ),
+    ] = None,
 ) -> TaskResponse:
+    parsed_id: Optional[uuid.UUID] = None
+    if x_idempotency_key:
+        try:
+            parsed_id = uuid.UUID(x_idempotency_key)
+        except ValueError:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Invalid X-Idempotency-Key format. Must be a valid UUID string."
+            )
+        existing_task = db.get(Task, parsed_id)
+        if existing_task:
+            if existing_task.user_id != current_user.id:
+                raise HTTPException(
+                    status_code=status.HTTP_409_CONFLICT,
+                    detail="Idempotency key collision with another user's task"
+                )
+            return _calculate_task_stats(db, existing_task)
+
     # If project_id is specified, verify ownership
     if task_in.project_id is not None:
         project = db.get(Project, task_in.project_id)
@@ -74,6 +99,7 @@ def create_task(
 
     now = datetime.now(timezone.utc)
     task = Task(
+        id=parsed_id or uuid.uuid4(),
         user_id=current_user.id,
         project_id=task_in.project_id,
         title=task_in.title,

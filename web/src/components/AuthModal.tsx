@@ -1,20 +1,21 @@
 import React, { useState } from 'react';
 import { useStore } from '../store/useStore';
 import { api } from '../services/api';
-import { X, Lock, User as UserIcon, Mail, ArrowRight, Loader2 } from 'lucide-react';
+import { X, Lock, User as UserIcon, Loader2, ArrowRight } from 'lucide-react';
 
 interface AuthModalProps {
   isOpen: boolean;
   onClose: () => void;
+  onOpenRegister?: () => void;
 }
 
-export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose }) => {
-  const [isRegister, setIsRegister] = useState(false);
+export const AuthModal: React.FC<AuthModalProps> = ({
+  isOpen,
+  onClose,
+  onOpenRegister,
+}) => {
   const [identifier, setIdentifier] = useState('');
-  const [username, setUsername] = useState('');
-  const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
-  const [fullName, setFullName] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -22,46 +23,25 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose }) => {
 
   if (!isOpen) return null;
 
-  const handleSubmit = async (e: React.FormEvent) => {
+  const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     setError(null);
     setLoading(true);
 
     try {
-      if (isRegister) {
-        if (!username && !email) {
-          throw new Error('Please provide either a username or an email');
-        }
-        if (password.length < 6) {
-          throw new Error('Password must be at least 6 characters');
-        }
-
-        const res = await api.register({
-          username: username.trim() || undefined,
-          email: email.trim() || undefined,
-          password,
-          full_name: fullName.trim() || undefined,
-        });
-
-        setToken(res.access_token);
-        setUser(res.user);
-        addToast(`Welcome to Focus, ${res.user.full_name || res.user.username || 'User'}!`, 'success');
-        onClose();
-      } else {
-        if (!identifier.trim()) {
-          throw new Error('Please enter your username or email');
-        }
-
-        const res = await api.login({
-          identifier: identifier.trim(),
-          password,
-        });
-
-        setToken(res.access_token);
-        setUser(res.user);
-        addToast(`Welcome back, ${res.user.full_name || res.user.username || 'User'}!`, 'success');
-        onClose();
+      if (!identifier.trim()) {
+        throw new Error('Please enter your username or email');
       }
+
+      const res = await api.login({
+        identifier: identifier.trim(),
+        password,
+      });
+
+      setToken(res.access_token);
+      setUser(res.user);
+      addToast(`Welcome back, ${res.user.full_name || res.user.username || 'User'}!`, 'success');
+      onClose();
     } catch (err: any) {
       setError(err.message || 'Authentication failed');
     } finally {
@@ -70,146 +50,76 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose }) => {
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-glass animate-fade-in">
-      <div className="relative w-full max-w-md bg-light-surface dark:bg-dark-surface border border-light-border dark:border-dark-border rounded-3xl p-6 sm:p-8 shadow-2xl animate-slide-up text-light-text dark:text-dark-text">
+    <div
+      onClick={(e) => {
+        if (e.target === e.currentTarget) onClose();
+      }}
+      className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/75 backdrop-blur-md transition-all duration-300 animate-in fade-in"
+    >
+      <div className="relative w-full max-w-sm bg-zinc-950/95 border border-zinc-800/80 rounded-3xl p-6 sm:p-7 shadow-2xl backdrop-blur-xl text-white transition-all">
         
-        {/* Top Sheet Drag Handle Indicator (Mobile Style) */}
-        <div className="w-9 h-1 rounded-full bg-light-borderSubtle dark:bg-dark-borderSubtle mx-auto mb-6" />
+        {/* Top Drag Handle Indicator */}
+        <div className="w-9 h-1 rounded-full bg-zinc-800 mx-auto mb-5" />
 
         {/* Close button */}
         <button
           onClick={onClose}
-          className="absolute top-6 right-6 p-2 rounded-full text-light-textSecondary dark:text-dark-textSecondary hover:text-light-text dark:hover:text-dark-text hover:bg-light-fill dark:hover:bg-dark-fill transition-colors"
+          className="absolute top-5 right-5 p-2 rounded-full text-zinc-400 hover:text-white hover:bg-zinc-900 transition-colors cursor-pointer"
+          title="Close"
         >
-          <X className="w-5 h-5" />
+          <X className="w-4 h-4" />
         </button>
 
         {/* Header */}
         <div className="text-center mb-6">
-          <h2 className="text-xl font-bold tracking-brand uppercase mb-1">
-            {isRegister ? 'Create Account' : 'Welcome Back'}
-          </h2>
-          <p className="text-xs text-light-textSecondary dark:text-dark-textSecondary">
-            {isRegister
-              ? 'Join the distraction-free productivity environment'
-              : 'Sign in to sync your tasks and focus metrics'}
-          </p>
-        </div>
-
-        {/* Tab Switcher */}
-        <div className="flex bg-light-fill dark:bg-dark-fill p-1 rounded-full mb-6 border border-light-border dark:border-dark-border">
-          <button
-            type="button"
-            onClick={() => { setIsRegister(false); setError(null); }}
-            className={`flex-1 py-1.5 rounded-full text-xs font-bold tracking-badge uppercase transition-all ${
-              !isRegister
-                ? 'bg-light-text text-light-bg dark:bg-dark-text dark:text-dark-bg shadow-sm'
-                : 'text-light-textSecondary dark:text-dark-textSecondary'
-            }`}
-          >
+          <h2 className="text-lg font-light tracking-wider uppercase text-white mb-1">
             Sign In
-          </button>
-          <button
-            type="button"
-            onClick={() => { setIsRegister(true); setError(null); }}
-            className={`flex-1 py-1.5 rounded-full text-xs font-bold tracking-badge uppercase transition-all ${
-              isRegister
-                ? 'bg-light-text text-light-bg dark:bg-dark-text dark:text-dark-bg shadow-sm'
-                : 'text-light-textSecondary dark:text-dark-textSecondary'
-            }`}
-          >
-            Register
-          </button>
+          </h2>
+          <p className="text-xs text-zinc-400 font-light">
+            Sync your tasks and focus metrics across all devices
+          </p>
         </div>
 
         {/* Error Alert */}
         {error && (
-          <div className="mb-4 p-3 rounded-2xl bg-black dark:bg-white text-white dark:text-black text-xs font-medium tracking-wide">
+          <div className="mb-4 p-3 rounded-2xl bg-red-950/40 border border-red-900/50 text-red-300 text-xs font-medium">
             {error}
           </div>
         )}
 
         {/* Form */}
-        <form onSubmit={handleSubmit} className="space-y-4">
-          {!isRegister ? (
-            <div>
-              <label className="block text-[11px] font-bold uppercase tracking-badge text-light-textSecondary dark:text-dark-textSecondary mb-1.5">
-                Username or Email
-              </label>
-              <div className="relative">
-                <UserIcon className="w-4 h-4 absolute left-3.5 top-1/2 -translate-y-1/2 text-light-textSecondary dark:text-dark-textSecondary" />
-                <input
-                  type="text"
-                  required
-                  placeholder="e.g. alex or alex@example.com"
-                  value={identifier}
-                  onChange={(e) => setIdentifier(e.target.value)}
-                  className="w-full pl-10 pr-4 py-2.5 rounded-2xl bg-light-card dark:bg-dark-card border border-light-border dark:border-dark-border text-sm focus:outline-none focus:border-light-text dark:focus:border-dark-text transition-colors text-light-text dark:text-dark-text"
-                />
-              </div>
+        <form onSubmit={handleLogin} className="space-y-3.5">
+          <div>
+            <label className="block text-[10px] font-bold uppercase tracking-wider text-zinc-400 mb-1.5">
+              Username or Email
+            </label>
+            <div className="relative">
+              <UserIcon className="w-3.5 h-3.5 absolute left-3.5 top-1/2 -translate-y-1/2 text-zinc-500" />
+              <input
+                type="text"
+                required
+                autoFocus
+                placeholder="username or email"
+                value={identifier}
+                onChange={(e) => setIdentifier(e.target.value)}
+                className="w-full pl-9 pr-4 py-2.5 rounded-xl bg-zinc-900/80 border border-zinc-800 text-xs text-white placeholder:text-zinc-600 focus:outline-none focus:border-zinc-500 transition-colors font-mono"
+              />
             </div>
-          ) : (
-            <>
-              <div>
-                <label className="block text-[11px] font-bold uppercase tracking-badge text-light-textSecondary dark:text-dark-textSecondary mb-1.5">
-                  Full Name (Optional)
-                </label>
-                <input
-                  type="text"
-                  placeholder="e.g. Alex Rivera"
-                  value={fullName}
-                  onChange={(e) => setFullName(e.target.value)}
-                  className="w-full px-4 py-2.5 rounded-2xl bg-light-card dark:bg-dark-card border border-light-border dark:border-dark-border text-sm focus:outline-none focus:border-light-text dark:focus:border-dark-text transition-colors text-light-text dark:text-dark-text"
-                />
-              </div>
-
-              <div>
-                <label className="block text-[11px] font-bold uppercase tracking-badge text-light-textSecondary dark:text-dark-textSecondary mb-1.5">
-                  Username
-                </label>
-                <div className="relative">
-                  <UserIcon className="w-4 h-4 absolute left-3.5 top-1/2 -translate-y-1/2 text-light-textSecondary dark:text-dark-textSecondary" />
-                  <input
-                    type="text"
-                    placeholder="e.g. alexrivera"
-                    value={username}
-                    onChange={(e) => setUsername(e.target.value)}
-                    className="w-full pl-10 pr-4 py-2.5 rounded-2xl bg-light-card dark:bg-dark-card border border-light-border dark:border-dark-border text-sm focus:outline-none focus:border-light-text dark:focus:border-dark-text transition-colors text-light-text dark:text-dark-text"
-                  />
-                </div>
-              </div>
-
-              <div>
-                <label className="block text-[11px] font-bold uppercase tracking-badge text-light-textSecondary dark:text-dark-textSecondary mb-1.5">
-                  Email Address
-                </label>
-                <div className="relative">
-                  <Mail className="w-4 h-4 absolute left-3.5 top-1/2 -translate-y-1/2 text-light-textSecondary dark:text-dark-textSecondary" />
-                  <input
-                    type="email"
-                    placeholder="e.g. alex@example.com"
-                    value={email}
-                    onChange={(e) => setEmail(e.target.value)}
-                    className="w-full pl-10 pr-4 py-2.5 rounded-2xl bg-light-card dark:bg-dark-card border border-light-border dark:border-dark-border text-sm focus:outline-none focus:border-light-text dark:focus:border-dark-text transition-colors text-light-text dark:text-dark-text"
-                  />
-                </div>
-              </div>
-            </>
-          )}
+          </div>
 
           <div>
-            <label className="block text-[11px] font-bold uppercase tracking-badge text-light-textSecondary dark:text-dark-textSecondary mb-1.5">
+            <label className="block text-[10px] font-bold uppercase tracking-wider text-zinc-400 mb-1.5">
               Password
             </label>
             <div className="relative">
-              <Lock className="w-4 h-4 absolute left-3.5 top-1/2 -translate-y-1/2 text-light-textSecondary dark:text-dark-textSecondary" />
+              <Lock className="w-3.5 h-3.5 absolute left-3.5 top-1/2 -translate-y-1/2 text-zinc-500" />
               <input
                 type="password"
                 required
                 placeholder="••••••••"
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
-                className="w-full pl-10 pr-4 py-2.5 rounded-2xl bg-light-card dark:bg-dark-card border border-light-border dark:border-dark-border text-sm focus:outline-none focus:border-light-text dark:focus:border-dark-text transition-colors text-light-text dark:text-dark-text"
+                className="w-full pl-9 pr-4 py-2.5 rounded-xl bg-zinc-900/80 border border-zinc-800 text-xs text-white placeholder:text-zinc-600 focus:outline-none focus:border-zinc-500 transition-colors"
               />
             </div>
           </div>
@@ -217,19 +127,35 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose }) => {
           <button
             type="submit"
             disabled={loading}
-            className="w-full mt-2 h-12 rounded-full bg-light-text text-light-bg dark:bg-dark-text dark:text-dark-bg font-bold tracking-brand text-xs uppercase flex items-center justify-center gap-2 hover:opacity-90 disabled:opacity-50 transition-all shadow-lg"
+            className="w-full mt-2 h-11 rounded-full bg-white text-black font-medium tracking-wider text-xs uppercase flex items-center justify-center gap-2 hover:bg-zinc-200 active:scale-98 transition-all disabled:opacity-50 cursor-pointer shadow-lg"
           >
             {loading ? (
-              <Loader2 className="w-4 h-4 animate-spin" />
+              <Loader2 className="w-3.5 h-3.5 animate-spin" />
             ) : (
               <>
-                <span>{isRegister ? 'Create Account' : 'Sign In'}</span>
-                <ArrowRight className="w-4 h-4" />
+                <span>Sign In</span>
+                <ArrowRight className="w-3.5 h-3.5" />
               </>
             )}
           </button>
         </form>
+
+        {/* Footer Link to Register Journey */}
+        <div className="mt-6 pt-4 border-t border-zinc-800/80 text-center">
+          <button
+            type="button"
+            onClick={() => {
+              onClose();
+              if (onOpenRegister) onOpenRegister();
+            }}
+            className="text-xs text-zinc-400 hover:text-white transition-colors cursor-pointer"
+          >
+            Don't have an account? <span className="font-semibold underline text-white">Start registration journey</span>
+          </button>
+        </div>
+
       </div>
     </div>
   );
 };
+

@@ -16,6 +16,13 @@
   body {
     overflow-x: hidden;
     font-family: var(--font-sans);
+    background-color: #0C0C0E;
+    color: #FFFFFF;
+  }
+
+  html.light body {
+    background-color: #F5F5F3;
+    color: #111113;
   }
 
   /* Tabular Numerals for jitter-free countdowns */
@@ -24,39 +31,46 @@
   }
 }
 
-/* Custom theme utilities matching the mobile design tokens */
+/* Figma Tailored Tokens */
 @utility bg-canvas-dark {
-  background-color: #000000;
+  background-color: #0C0C0E;
 }
 @utility bg-canvas-light {
-  background-color: #FFFFFF;
+  background-color: #F5F5F3;
 }
 
 @utility bg-surface-dark {
   background-color: #141416;
 }
 @utility bg-surface-light {
-  background-color: #F5F5F7;
+  background-color: #FFFFFF;
 }
 
 @utility bg-item-dark {
-  background-color: #222226;
+  background-color: #1D1D20;
 }
 @utility bg-item-light {
-  background-color: #EAEAEA;
+  background-color: #F0F0EE;
+}
+
+@utility bg-hover-dark {
+  background-color: #242428;
+}
+@utility bg-hover-light {
+  background-color: #EDEDEA;
 }
 
 @utility border-subtle-dark {
-  border-color: #2A2A2E;
+  border-color: #242428;
 }
 @utility border-subtle-light {
-  border-color: #E0E0E5;
+  border-color: #E4E4E7;
 }
 
 /* Minimalist sleek scrollbar */
 ::-webkit-scrollbar {
-  width: 6px;
-  height: 6px;
+  width: 5px;
+  height: 5px;
 }
 
 ::-webkit-scrollbar-track {
@@ -64,25 +78,11 @@
 }
 
 .dark ::-webkit-scrollbar-thumb {
-  background: #2a2a2e;
+  background: #242428;
   border-radius: 9999px;
-}
-
-.dark ::-webkit-scrollbar-thumb:hover {
-  background: #38383e;
 }
 
 .light ::-webkit-scrollbar-thumb {
-  background: #e0e0e0;
+  background: #D4D4D8;
   border-radius: 9999px;
-}
-
-.light ::-webkit-scrollbar-thumb:hover {
-  background: #cccccc;
-}
-
-/* Glassmorphism backdrop utility */
-.backdrop-glass {
-  backdrop-filter: blur(16px);
-  -webkit-backdrop-filter: blur(16px);
 }

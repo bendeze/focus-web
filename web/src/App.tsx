@@ -12,6 +12,8 @@ import { TasksView } from './components/TasksView';
 import { ProjectsView } from './components/ProjectsView';
 import { AnalyticsView } from './components/AnalyticsView';
 
+import { RegisterJourney } from './components/RegisterJourney';
+
 export const App: React.FC = () => {
   const {
     user,
@@ -26,6 +28,7 @@ export const App: React.FC = () => {
   const [projects, setProjects] = useState<Project[]>([]);
   const [stats, setStats] = useState<FocusStats | null>(null);
   const [isAuthOpen, setIsAuthOpen] = useState(false);
+  const [isRegisterOpen, setIsRegisterOpen] = useState(false);
   const [isProfileOpen, setIsProfileOpen] = useState(false);
 
   const lastSyncTimeRef = useRef<string>('');
@@ -67,6 +70,7 @@ export const App: React.FC = () => {
     initialize();
   }, [token, setUser, refreshAllData]);
 
+  // Background Delta Sync (every 10s)
   useEffect(() => {
     if (!user) return;
 
@@ -106,13 +110,23 @@ export const App: React.FC = () => {
   }, [user]);
 
   return (
-    <div className="min-h-screen bg-light-bg dark:bg-dark-bg text-light-text dark:text-dark-text transition-colors flex flex-col font-sans">
+    <div className="min-h-screen bg-white dark:bg-black light:bg-canvas-light text-white dark:text-white light:text-black transition-colors flex flex-col font-sans">
       <ToastContainer />
-      <AuthModal isOpen={isAuthOpen} onClose={() => setIsAuthOpen(false)} />
+      <AuthModal
+        isOpen={isAuthOpen}
+        onClose={() => setIsAuthOpen(false)}
+        onOpenRegister={() => setIsRegisterOpen(true)}
+      />
+      <RegisterJourney
+        isOpen={isRegisterOpen}
+        onClose={() => setIsRegisterOpen(false)}
+        onSwitchToLogin={() => setIsAuthOpen(true)}
+      />
       <ProfileModal isOpen={isProfileOpen} onClose={() => setIsProfileOpen(false)} />
 
-      {!isZenMode && (
+      {!isZenMode && !isRegisterOpen && (
         <Navbar
+          projects={projects}
           onOpenAuth={() => setIsAuthOpen(true)}
           onOpenProfile={() => setIsProfileOpen(true)}
         />
@@ -125,6 +139,7 @@ export const App: React.FC = () => {
             projects={projects}
             stats={stats}
             onOpenAuth={() => setIsAuthOpen(true)}
+            onRefresh={refreshAllData}
           />
         )}
 
@@ -162,21 +177,6 @@ export const App: React.FC = () => {
           />
         )}
       </main>
-
-      {!isZenMode && (
-        <footer className="border-t border-light-border dark:border-dark-border py-6 text-center text-xs text-light-textSecondary dark:text-dark-textSecondary transition-colors">
-          <div className="max-w-7xl mx-auto px-4 flex flex-col sm:flex-row items-center justify-between gap-2">
-            <div className="flex items-center gap-2 font-bold tracking-brand text-[10px] uppercase">
-              <span>FOCUS ECOSYSTEM</span>
-              <span>·</span>
-              <span>OFFLINE-FIRST SYNC</span>
-            </div>
-            <div className="text-[11px] text-light-textMuted dark:text-dark-textMuted">
-              Connected to Neon Cloud PostgreSQL & FastAPI API
-            </div>
-          </div>
-        </footer>
-      )}
     </div>
   );
 };

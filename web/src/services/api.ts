@@ -68,7 +68,7 @@ export const api = {
     return handleResponse<User>(res);
   },
 
-  async updateProfile(data: { full_name?: string; avatar_url?: string }): Promise<User> {
+  async updateProfile(data: { username?: string; email?: string; full_name?: string; avatar_url?: string }): Promise<User> {
     const res = await fetch(`${getBaseUrl()}/api/v1/auth/me`, {
       method: 'PATCH',
       headers: getHeaders(),

@@ -1,0 +1,10 @@
+/* src/styles.css (Tailwind v4) */
+@import "tailwindcss";
+
+@theme {
+  --color-secondary: #1D1D20;
+  --color-chart-1: #10B981;
+  --color-muted-foreground: #71717A;
+  --color-foreground: #FFFFFF;
+  --color-background: #0C0C0E;
+}

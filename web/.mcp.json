@@ -1,0 +1,8 @@
+{
+	"mcpServers": {
+		"my-mcp-server-4fb1ddc3": {
+			"url": "https://mcp.figma.com/mcp",
+			"type": "http"
+		}
+	}
+}

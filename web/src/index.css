@@ -1,5 +1,13 @@
 @import "tailwindcss";
 
+@theme {
+  --color-secondary: #1D1D20;
+  --color-chart-1: #10B981;
+  --color-muted-foreground: #71717A;
+  --color-foreground: #FFFFFF;
+  --color-background: #0C0C0E;
+}
+
 @layer base {
   :root {
     --font-sans: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
@@ -86,3 +94,37 @@
   background: #D4D4D8;
   border-radius: 9999px;
 }
+
+/* Eliminate all borders, outlines and focus rings when selecting or clicking charts */
+.recharts-wrapper,
+.recharts-wrapper *,
+.recharts-surface,
+.recharts-surface *,
+.recharts-responsive-container,
+.recharts-responsive-container *,
+.recharts-bar-rectangle,
+.recharts-bar-rectangle * {
+  outline: none !important;
+  border: none !important;
+  box-shadow: none !important;
+  -webkit-tap-highlight-color: transparent !important;
+  user-select: none !important;
+  -webkit-user-select: none !important;
+}
+
+.recharts-wrapper:focus,
+.recharts-wrapper:focus-visible,
+.recharts-wrapper:active,
+.recharts-surface:focus,
+.recharts-surface:focus-visible,
+.recharts-surface:active,
+svg.recharts-surface:focus,
+svg.recharts-surface:focus-visible,
+svg.recharts-surface:active,
+.recharts-bar-rectangle:focus,
+.recharts-bar-rectangle:focus-visible {
+  outline: none !important;
+  border: none !important;
+  box-shadow: none !important;
+}
+

@@ -1,0 +1,33 @@
+# ==============================================================================
+# Focus Productivity Platform - Navbar Layout (Avatar | Tasks Focus Projects | Triangle)
+# ==============================================================================
+
+git add web/src/components/Navbar.tsx
+git commit -m "feat(web): layout navbar with Avatar on left, centered Tasks-Focus-Projects, and Triangle button on right"
+
+git add web/src/components/DashboardView.tsx
+git commit -m "feat(web): implement dashboard view with metrics, backlog, and activity heatmap"
+
+git add web/src/index.css
+git commit -m "feat(web): update styling tokens for dark (#0C0C0E) and light (#F5F5F3) canvas"
+
+git add web/src/App.tsx
+git commit -m "feat(web): integrate navigation with delta sync and state management"
+
+git add web/src/components/Navbar.tsx
+git commit -m "feat(web): add sticky navbar with dynamic spacing expansion and scroll-driven Focus animation"
+
+git add web/src/services/api.ts
+git commit -m "feat(web): support username and email fields in updateProfile API"
+
+git add web/src/components/ProfileModal.tsx
+git commit -m "feat(web): add smooth dynamic height transition and cross-fade animation when switching profile sub-tabs"
+
+git add web/src/components/AuthModal.tsx
+git commit -m "feat(web): redesign AuthModal login with smooth backdrop blur and RegisterJourney trigger"
+
+git add web/src/components/RegisterJourney.tsx
+git commit -m "feat(web): create conversational step-by-step registration journey with auto-login and hidden navbar"
+
+git add web/src/App.tsx
+git commit -m "feat(web): integrate RegisterJourney into App state with full-screen distraction-free flow"

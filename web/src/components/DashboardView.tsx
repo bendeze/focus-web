@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect, useCallback } from 'react';
 import { useStore } from '../store/useStore';
 import { api } from '../services/api';
 import {
@@ -11,19 +11,23 @@ import {
   Plus,
   ArrowRight,
   TrendingUp,
-  RotateCcw,
+  TrendingDown,
   Circle,
   Check,
 } from 'lucide-react';
+import { WeeklyBarChart } from './WeeklyBarChart';
+import { PomodoroTimerWidget } from './PomodoroTimerWidget';
 import {
-  BarChart,
-  Bar,
-  XAxis,
-  ResponsiveContainer,
-  Cell,
-  Tooltip,
-} from 'recharts';
-import type { FocusStats, Project, Task } from '../types';
+  CalendarHeatmap,
+  CalendarHeatmapBody,
+  CalendarHeatmapBlock,
+  CalendarHeatmapLegend,
+  CalendarHeatmapStat,
+  CalendarHeatmapFooter,
+} from './heatmap/calendar-heatmap';
+import { Tooltip, TooltipTrigger, TooltipContent } from './ui/tooltip';
+import { subWeeks, eachDayOfInterval, format, parseISO, startOfWeek, endOfWeek } from 'date-fns';
+import type { FocusSession, FocusStats, Project, Task } from '../types';
 
 interface DashboardViewProps {
   stats: FocusStats | null;
@@ -46,9 +50,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
     setActiveTab,
     selectedTaskId,
     setSelectedTaskId,
-    remainingSeconds,
     setRemainingSeconds,
-    totalSeconds,
     setTotalSeconds,
     isTimerRunning,
     setIsTimerRunning,
@@ -60,6 +62,22 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
   const [isAddingTask, setIsAddingTask] = useState(false);
   const [newTaskTitle, setNewTaskTitle] = useState('');
   const [newTaskDuration, setNewTaskDuration] = useState(25);
+  const [sessions, setSessions] = useState<FocusSession[]>([]);
+
+  // Load completed focus sessions for analytics
+  const loadSessions = useCallback(async () => {
+    if (!user) return;
+    try {
+      const data = await api.listFocusSessions();
+      setSessions(data);
+    } catch {
+      // quiet fail
+    }
+  }, [user]);
+
+  useEffect(() => {
+    loadSessions();
+  }, [loadSessions, tasks]);
 
   // Formatted Current Date (e.g. FRIDAY, OCTOBER 9)
   const currentDateFormatted = useMemo(() => {
@@ -91,36 +109,181 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
     ? Math.round((completedTasks.length / activeTasks.length) * 100)
     : 86;
 
-  // 7-Day Focus Bar Chart Data
-  const weeklyData = useMemo(() => {
-    const days = ['M', 'T', 'W', 'T', 'F', 'S', 'S'];
-    const currentDayIdx = (new Date().getDay() + 6) % 7; // Monday = 0
-    return days.map((day, idx) => ({
-      day,
-      hours: idx === currentDayIdx ? 5.2 : [3.8, 4.2, 4.0, 4.8, 5.2, 2.5, 3.0][idx] || 3.5,
-      isToday: idx === currentDayIdx,
-    }));
-  }, []);
-
-  // Contribution Heatmap Grid (16 Weeks x 7 Days)
-  const heatmapWeeks = useMemo(() => {
-    const weeks = [];
-    for (let w = 0; w < 16; w++) {
-      const days = [];
-      for (let d = 0; d < 7; d++) {
-        // Deterministic realistic density
-        const intensity = (w * 7 + d * 3) % 5;
-        days.push(intensity);
+  // Group completed tasks by date string (YYYY-MM-DD)
+  const completedTasksByDate = useMemo(() => {
+    const map = new Map<string, Task[]>();
+    tasks.forEach((t) => {
+      if (t.status === 'completed' && !t.is_deleted) {
+        const rawDate = t.completed_at || t.updated_at || t.created_at;
+        if (rawDate) {
+          try {
+            const dateKey = format(new Date(rawDate), 'yyyy-MM-dd');
+            if (!map.has(dateKey)) {
+              map.set(dateKey, []);
+            }
+            map.get(dateKey)!.push(t);
+          } catch {
+            const dateKey = rawDate.slice(0, 10);
+            if (!map.has(dateKey)) {
+              map.set(dateKey, []);
+            }
+            map.get(dateKey)!.push(t);
+          }
+        }
       }
-      weeks.push(days);
-    }
-    return weeks;
-  }, []);
+    });
+    return map;
+  }, [tasks]);
 
-  // Timer formatted
-  const mins = Math.floor(remainingSeconds / 60);
-  const secs = remainingSeconds % 60;
-  const timerDisplay = `${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
+  // Helper to format duration: shows minutes when few, hours + minutes when longer
+  const formatFocusDuration = (seconds: number): string => {
+    if (seconds <= 0) return '0m';
+    const totalMinutes = Math.round(seconds / 60);
+    if (totalMinutes < 1) return '< 1m';
+    if (totalMinutes < 60) return `${totalMinutes}m`;
+    const hours = Math.floor(totalMinutes / 60);
+    const remainingMins = totalMinutes % 60;
+    if (remainingMins === 0) return `${hours}h`;
+    return `${hours}h ${remainingMins}m`;
+  };
+
+  // 7-Day Focus Performance & Comparison against Last Week (Real Data)
+  const weeklyAnalytics = useMemo(() => {
+    const today = new Date();
+    const todayStr = format(today, 'yyyy-MM-dd');
+    const startOfCurrentWeek = startOfWeek(today, { weekStartsOn: 1 }); // Monday
+    const endOfCurrentWeek = endOfWeek(today, { weekStartsOn: 1 });     // Sunday
+    const startOfPreviousWeek = subWeeks(startOfCurrentWeek, 1);
+    const endOfPreviousWeek = subWeeks(endOfCurrentWeek, 1);
+
+    // Calculate total focus seconds for a given date YYYY-MM-DD
+    const getFocusSecondsForDate = (dateKey: string) => {
+      // 1. Completed focus sessions on this date
+      const daySessions = sessions.filter((s) => {
+        if (s.status !== 'completed' || !s.started_at) return false;
+        try {
+          return format(new Date(s.started_at), 'yyyy-MM-dd') === dateKey;
+        } catch {
+          return s.started_at.startsWith(dateKey);
+        }
+      });
+      const sessionSeconds = daySessions.reduce(
+        (acc, s) => acc + (s.actual_focus_seconds || s.duration_minutes * 60),
+        0
+      );
+
+      // 2. Completed tasks on this date (factor in task duration if session wasn't recorded)
+      const dayTasks = completedTasksByDate.get(dateKey) || [];
+      const sessionTaskIds = new Set(daySessions.map((s) => s.task_id));
+      const orphanTasksSeconds = dayTasks
+        .filter((t) => !sessionTaskIds.has(t.id))
+        .reduce((acc, t) => {
+          const taskSecs = t.total_focus_minutes > 0
+            ? t.total_focus_minutes * 60
+            : (t.estimated_minutes || 25) * 60;
+          return acc + taskSecs;
+        }, 0);
+
+      return sessionSeconds + orphanTasksSeconds;
+    };
+
+    // Days of current week (Mon..Sun)
+    const currentWeekDays = eachDayOfInterval({
+      start: startOfCurrentWeek,
+      end: endOfCurrentWeek,
+    });
+
+    const dayLabels = ['M', 'T', 'W', 'T', 'F', 'S', 'S'];
+
+    const barChartData = currentWeekDays.map((d, index) => {
+      const dateKey = format(d, 'yyyy-MM-dd');
+      const seconds = getFocusSecondsForDate(dateKey);
+      const minutes = Math.round(seconds / 60);
+      const dayTasks = completedTasksByDate.get(dateKey) || [];
+      const completedTaskCount = dayTasks.length;
+      const isToday = dateKey === todayStr;
+
+      return {
+        day: dayLabels[index],
+        fullDate: format(d, 'EEEE, MMM d'),
+        dateKey,
+        minutes,
+        seconds,
+        tasksCompleted: completedTaskCount,
+        tasks: dayTasks,
+        isToday,
+      };
+    });
+
+    const thisWeekTotalSecs = barChartData.reduce((acc, d) => acc + d.seconds, 0);
+
+    // Days of previous week (Mon..Sun)
+    const previousWeekDays = eachDayOfInterval({
+      start: startOfPreviousWeek,
+      end: endOfPreviousWeek,
+    });
+    const lastWeekTotalSecs = previousWeekDays.reduce((acc, d) => {
+      const dateKey = format(d, 'yyyy-MM-dd');
+      return acc + getFocusSecondsForDate(dateKey);
+    }, 0);
+
+    // Active days count: account for days where user had no tasks or was resting
+    // The average is computed over active days with focus/tasks rather than penalizing non-task days
+    const activeDaysCount = barChartData.filter((d) => d.seconds > 0 || d.tasksCompleted > 0).length;
+    const avgSecondsPerDay = activeDaysCount > 0
+      ? Math.round(thisWeekTotalSecs / activeDaysCount)
+      : 0;
+
+    const totalDisplay = formatFocusDuration(thisWeekTotalSecs);
+    const avgDisplay = formatFocusDuration(avgSecondsPerDay);
+
+    // Comparison against previous week
+    let percentageChange = 0;
+    let comparisonTrend: 'up' | 'down' | 'neutral' = 'neutral';
+    let comparisonText = 'No focus activity recorded yet';
+
+    if (lastWeekTotalSecs > 0) {
+      percentageChange = Math.round(((thisWeekTotalSecs - lastWeekTotalSecs) / lastWeekTotalSecs) * 100);
+      if (percentageChange > 0) {
+        comparisonTrend = 'up';
+        comparisonText = `↑ ${percentageChange}% more focus than last week`;
+      } else if (percentageChange < 0) {
+        comparisonTrend = 'down';
+        comparisonText = `↓ ${Math.abs(percentageChange)}% less focus than last week`;
+      } else {
+        comparisonTrend = 'neutral';
+        comparisonText = 'Equal focus compared to last week';
+      }
+    } else if (thisWeekTotalSecs > 0) {
+      comparisonTrend = 'up';
+      comparisonText = `↑ ${totalDisplay} logged this week`;
+    }
+
+    return {
+      barChartData,
+      thisWeekTotalSecs,
+      totalDisplay,
+      avgDisplay,
+      activeDaysCount,
+      comparisonTrend,
+      comparisonText,
+    };
+  }, [sessions, completedTasksByDate]);
+
+  // Continuous activity array for the last 16 weeks (recalculated whenever tasks update)
+  const activityData = useMemo(() => {
+    const today = new Date();
+    const startDate = subWeeks(today, 16);
+    const days = eachDayOfInterval({ start: startDate, end: today });
+    return days.map((day) => {
+      const dateStr = format(day, 'yyyy-MM-dd');
+      const dayTasks = completedTasksByDate.get(dateStr) || [];
+      return {
+        date: dateStr,
+        value: dayTasks.length,
+      };
+    });
+  }, [completedTasksByDate]);
 
   // Start Sprint Action
   const handleStartSprint = async () => {
@@ -171,16 +334,11 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
     }
   };
 
-  const handleResetTimer = () => {
-    setIsTimerRunning(false);
-    setRemainingSeconds(totalSeconds);
-    addToast('Timer reset', 'info');
-  };
-
   const handleToggleTaskStatus = async (task: Task) => {
     const nextStatus = task.status === 'completed' ? 'todo' : 'completed';
     try {
       await api.updateTask(task.id, { status: nextStatus });
+      await loadSessions();
       onRefresh?.();
     } catch (err: any) {
       addToast(err.message || 'Failed to update task', 'error');
@@ -471,153 +629,53 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
         {/* ================================================================= */}
         <div className="lg:col-span-5 flex flex-col gap-6">
           
-          {/* Widget 1: Today's Focus Timer Widget */}
-          <div className="p-6 rounded-3xl bg-surface-dark dark:bg-surface-dark light:bg-surface-light border border-subtle-dark dark:border-subtle-dark light:border-subtle-light flex flex-col items-center justify-between gap-6 text-center">
-            
-            <div className="w-full flex items-center justify-between">
-              <span className="text-[10px] font-bold uppercase tracking-widest text-zinc-500 dark:text-zinc-400 light:text-zinc-500">
-                TODAY'S FOCUS
-              </span>
-              <span className="text-[10px] font-bold uppercase tracking-widest text-emerald-400 bg-emerald-500/10 px-2.5 py-0.5 rounded-full">
-                {isTimerRunning ? 'IN PROGRESS' : 'READY'}
-              </span>
-            </div>
-
-            {/* Circular Progress Ring with Center Display */}
-            <div className="relative flex items-center justify-center my-1">
-              <svg className="w-44 h-44 -rotate-90">
-                <circle
-                  cx="88"
-                  cy="88"
-                  r="72"
-                  className="text-subtle-dark dark:text-subtle-dark light:text-subtle-light"
-                  stroke="currentColor"
-                  strokeWidth="7"
-                  fill="transparent"
-                />
-                <circle
-                  cx="88"
-                  cy="88"
-                  r="72"
-                  stroke="currentColor"
-                  strokeWidth="7"
-                  fill="transparent"
-                  strokeDasharray={2 * Math.PI * 72}
-                  strokeDashoffset={2 * Math.PI * 72 * (1 - (totalSeconds > 0 ? (totalSeconds - remainingSeconds) / totalSeconds : 0))}
-                  strokeLinecap="round"
-                  className="text-white dark:text-white light:text-black transition-all duration-1000 ease-linear"
-                />
-              </svg>
-
-              <div className="absolute flex flex-col items-center justify-center">
-                <span className="text-4xl font-extrabold tracking-tight tabular-nums font-sans">
-                  {timerDisplay}
-                </span>
-                <span className="text-[10px] uppercase font-bold tracking-widest text-zinc-500 mt-0.5">
-                  {isTimerRunning ? 'FOCUSING' : 'READY'}
-                </span>
-              </div>
-            </div>
-
-            {/* Session Info & Progress Dots */}
-            <div className="flex flex-col items-center gap-2">
-              <div className="text-xs font-bold tracking-wide">
-                DEEP WORK — Session 01 of 04
-              </div>
-              <div className="text-[11px] text-zinc-500 dark:text-zinc-400 light:text-zinc-500">
-                25 min focus · 5 min break
-              </div>
-              <div className="flex items-center gap-1.5 mt-1">
-                <span className="w-2 h-2 rounded-full bg-white dark:bg-white light:bg-black" />
-                <span className="w-2 h-2 rounded-full bg-zinc-700 dark:bg-zinc-700 light:bg-zinc-300" />
-                <span className="w-2 h-2 rounded-full bg-zinc-700 dark:bg-zinc-700 light:bg-zinc-300" />
-                <span className="w-2 h-2 rounded-full bg-zinc-700 dark:bg-zinc-700 light:bg-zinc-300" />
-              </div>
-            </div>
-
-            {/* Controls Button Row */}
-            <div className="flex items-center gap-3 w-full">
-              <button
-                onClick={handleStartSprint}
-                className="flex-1 h-10 rounded-full bg-white dark:bg-white text-black light:bg-black light:text-white font-bold text-xs uppercase tracking-wider flex items-center justify-center gap-1.5 hover:opacity-90 active:scale-98 transition-all cursor-pointer shadow-sm"
-              >
-                {isTimerRunning ? (
-                  <>
-                    <Pause className="w-3.5 h-3.5 fill-current" />
-                    <span>Pause</span>
-                  </>
-                ) : (
-                  <>
-                    <Play className="w-3.5 h-3.5 fill-current ml-0.5" />
-                    <span>Start</span>
-                  </>
-                )}
-              </button>
-
-              <button
-                onClick={handleResetTimer}
-                className="w-10 h-10 rounded-full bg-hover-dark dark:bg-hover-dark light:bg-hover-light flex items-center justify-center text-zinc-400 hover:text-white dark:hover:text-white light:hover:text-black transition-colors"
-                title="Reset Timer"
-              >
-                <RotateCcw className="w-3.5 h-3.5" />
-              </button>
-            </div>
-
-          </div>
+          {/* Widget 1: Pomodoro Focus Timer Widget */}
+          <PomodoroTimerWidget
+            tasks={tasks}
+            onSessionFinished={onRefresh}
+          />
 
           {/* Widget 2: This Week Focus Analytics Widget */}
-          <div className="p-6 rounded-3xl bg-surface-dark dark:bg-surface-dark light:bg-surface-light border border-subtle-dark dark:border-subtle-dark light:border-subtle-light flex flex-col justify-between gap-4">
+          <div className="p-6 rounded-3xl bg-surface-dark dark:bg-surface-dark light:bg-surface-light border border-subtle-dark dark:border-subtle-dark light:border-subtle-light flex flex-col justify-between gap-4 select-none">
             
             <div className="flex items-center justify-between">
               <span className="text-[10px] font-bold uppercase tracking-widest text-zinc-500 dark:text-zinc-400 light:text-zinc-500">
                 THIS WEEK
               </span>
-              <span className="text-xs font-bold tabular-nums">
-                4.5h avg.
-              </span>
+              <div className="flex items-center gap-1.5 tabular-nums">
+                <span className="text-xs font-bold text-white dark:text-white light:text-black">
+                  {weeklyAnalytics.totalDisplay}
+                </span>
+                <span className="text-[10px] text-zinc-500 dark:text-zinc-400 font-medium">
+                  ({weeklyAnalytics.avgDisplay}/day)
+                </span>
+              </div>
             </div>
 
-            <div className="text-xs font-semibold text-emerald-400 flex items-center gap-1">
-              <TrendingUp className="w-3.5 h-3.5" />
-              <span>↑ 18% more focus than last week</span>
+            <div className="flex items-center gap-1.5 text-xs font-semibold">
+              {weeklyAnalytics.comparisonTrend === 'up' ? (
+                <>
+                  <TrendingUp className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
+                  <span className="text-emerald-400">{weeklyAnalytics.comparisonText}</span>
+                </>
+              ) : weeklyAnalytics.comparisonTrend === 'down' ? (
+                <>
+                  <TrendingDown className="w-3.5 h-3.5 text-zinc-400 dark:text-zinc-400 light:text-zinc-600 shrink-0" />
+                  <span className="text-zinc-400 dark:text-zinc-400 light:text-zinc-600">{weeklyAnalytics.comparisonText}</span>
+                </>
+              ) : (
+                <span className="text-zinc-500 dark:text-zinc-400 light:text-zinc-500">
+                  {weeklyAnalytics.comparisonText}
+                </span>
+              )}
             </div>
 
             {/* 7-Day Bar Chart */}
-            <div className="h-28 w-full mt-2">
-              <ResponsiveContainer width="100%" height="100%">
-                <BarChart data={weeklyData} margin={{ top: 5, right: 5, left: 5, bottom: 0 }}>
-                  <XAxis
-                    dataKey="day"
-                    stroke="currentColor"
-                    opacity={0.4}
-                    fontSize={11}
-                    tickLine={false}
-                    axisLine={false}
-                  />
-                  <Tooltip
-                    content={({ active, payload }) => {
-                      if (active && payload && payload.length) {
-                        const data = payload[0].payload;
-                        return (
-                          <div className="p-2 rounded-xl bg-canvas-dark dark:bg-canvas-dark light:bg-canvas-light text-white dark:text-white light:text-black shadow-xl text-[11px] font-bold">
-                            {data.hours} hrs
-                          </div>
-                        );
-                      }
-                      return null;
-                    }}
-                  />
-                  <Bar dataKey="hours" radius={[4, 4, 4, 4]}>
-                    {weeklyData.map((entry, index) => (
-                      <Cell
-                        key={`cell-${index}`}
-                        fill={entry.isToday ? (theme === 'dark' ? '#FFFFFF' : '#111113') : (theme === 'dark' ? '#2A2A2E' : '#D4D4D8')}
-                      />
-                    ))}
-                  </Bar>
-                </BarChart>
-              </ResponsiveContainer>
-            </div>
+            <WeeklyBarChart
+              data={weeklyAnalytics.barChartData}
+              theme={theme}
+              completedTasksByDate={completedTasksByDate}
+            />
 
           </div>
 
@@ -626,57 +684,99 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
       </div>
 
       {/* 4. Bottom Section: Daily Activity Contribution Heatmap */}
-      <div className="p-6 md:p-8 rounded-3xl bg-surface-dark dark:bg-surface-dark light:bg-surface-light border border-subtle-dark dark:border-subtle-dark light:border-subtle-light flex flex-col gap-5">
-        
-        <div className="flex items-center justify-between">
-          <div className="flex flex-col">
-            <h3 className="text-base font-bold text-white dark:text-white light:text-black">
-              Daily Activity
-            </h3>
-            <span className="text-xs text-zinc-500 dark:text-zinc-400 light:text-zinc-500">
-              Consistency over the last 16 weeks
-            </span>
-          </div>
-
-          <div className="flex items-center gap-2 text-[11px] text-zinc-500 dark:text-zinc-400 light:text-zinc-500">
-            <span>Less</span>
-            <div className="flex items-center gap-1">
-              <span className="w-2.5 h-2.5 rounded-sm bg-item-dark dark:bg-item-dark light:bg-item-light" />
-              <span className="w-2.5 h-2.5 rounded-sm bg-emerald-950 dark:bg-emerald-950 light:bg-emerald-200" />
-              <span className="w-2.5 h-2.5 rounded-sm bg-emerald-700 dark:bg-emerald-700 light:bg-emerald-400" />
-              <span className="w-2.5 h-2.5 rounded-sm bg-emerald-500 dark:bg-emerald-500 light:bg-emerald-600" />
+      <div className="p-6 md:p-8 rounded-3xl bg-transparent light:bg-surface-light border border-subtle-dark dark:border-subtle-dark light:border-subtle-light flex flex-col gap-5">
+        <CalendarHeatmap
+          data={activityData}
+          weekStart={1}
+          blockSize={13}
+          blockMargin={4}
+          blockRadius={3}
+          levels={5}
+          maxCount={4}
+          colors={{
+            empty: theme === 'light' ? '#E4E4E7' : '#1D1D20',
+            scale: '#10B981',
+          }}
+          className="p-0 w-full"
+        >
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-2">
+            <div className="flex flex-col">
+              <h3 className="text-base font-bold text-white dark:text-white light:text-black">
+                Daily Activity
+              </h3>
+              <span className="text-xs text-zinc-500 dark:text-zinc-400 light:text-zinc-500">
+                Consistency over the last 16 weeks · {completedTasks.length} total tasks completed
+              </span>
             </div>
-            <span>More</span>
+
+            <CalendarHeatmapLegend
+              className="text-xs"
+              labels={{ less: 'Less', more: 'More' }}
+            />
           </div>
-        </div>
 
-        {/* Heatmap Grid */}
-        <div className="w-full overflow-x-auto pb-2">
-          <div className="flex items-center gap-1.5 min-w-[640px]">
-            {heatmapWeeks.map((week, wIdx) => (
-              <div key={wIdx} className="flex flex-col gap-1.5">
-                {week.map((level, dIdx) => {
-                  const getCellColor = (lvl: number) => {
-                    if (lvl === 0) return 'bg-item-dark dark:bg-item-dark light:bg-item-light';
-                    if (lvl === 1) return 'bg-emerald-950/80 dark:bg-emerald-950/80 light:bg-emerald-200';
-                    if (lvl === 2) return 'bg-emerald-800 dark:bg-emerald-800 light:bg-emerald-300';
-                    if (lvl === 3) return 'bg-emerald-600 dark:bg-emerald-600 light:bg-emerald-400';
-                    return 'bg-emerald-400 dark:bg-emerald-400 light:bg-emerald-500';
-                  };
+          {/* Heatmap SVG Grid */}
+          <div className="w-full overflow-x-auto pb-1">
+            <CalendarHeatmapBody
+              labelClassName="text-zinc-500 dark:text-zinc-400 light:text-zinc-500 fill-zinc-500 dark:fill-zinc-400 light:fill-zinc-500 text-[11px]"
+              className="py-1 gap-4 min-w-[640px]"
+            >
+              {({ activity, dayIndex, weekIndex }) => {
+                const dayTasks = completedTasksByDate.get(activity.date) || [];
+                const formattedDate = format(parseISO(activity.date), 'EEEE, MMMM d, yyyy');
 
-                  return (
-                    <div
-                      key={dIdx}
-                      className={`w-3.5 h-3.5 rounded-sm transition-all hover:scale-125 ${getCellColor(level)}`}
-                      title={`Activity level: ${level}`}
+                return (
+                  <Tooltip key={activity.date}>
+                    <TooltipTrigger
+                      render={
+                        <CalendarHeatmapBlock
+                          activity={activity}
+                          dayIndex={dayIndex}
+                          weekIndex={weekIndex}
+                        />
+                      }
                     />
-                  );
-                })}
-              </div>
-            ))}
+                    <TooltipContent
+                      side="top"
+                      sideOffset={6}
+                      className="p-3 min-w-[200px] max-w-xs flex flex-col gap-2 pointer-events-auto"
+                    >
+                      <div className="flex items-center justify-between gap-3 text-xs border-b border-subtle-dark dark:border-subtle-dark light:border-subtle-light pb-1.5 font-medium">
+                        <span className="text-zinc-300 dark:text-zinc-300 light:text-zinc-700 font-semibold">
+                          {formattedDate}
+                        </span>
+                        <span className="text-emerald-400 font-bold font-mono text-[11px] shrink-0">
+                          {dayTasks.length} {dayTasks.length === 1 ? 'task' : 'tasks'}
+                        </span>
+                      </div>
+                      {dayTasks.length > 0 ? (
+                        <div className="flex flex-col gap-1.5 max-h-36 overflow-y-auto pr-1">
+                          {dayTasks.map((t) => (
+                            <div
+                              key={t.id}
+                              className="flex items-center gap-1.5 text-[11px] text-zinc-300 dark:text-zinc-300 light:text-zinc-800"
+                            >
+                              <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
+                              <span className="truncate">{t.title}</span>
+                            </div>
+                          ))}
+                        </div>
+                      ) : (
+                        <span className="text-[11px] text-zinc-500 py-0.5">
+                          No completed tasks on this day
+                        </span>
+                      )}
+                    </TooltipContent>
+                  </Tooltip>
+                );
+              }}
+            </CalendarHeatmapBody>
           </div>
-        </div>
 
+          <CalendarHeatmapFooter className="pt-2 text-xs text-zinc-500 dark:text-zinc-400 light:text-zinc-500">
+            <CalendarHeatmapStat label="{{value}} tasks completed across this period" />
+          </CalendarHeatmapFooter>
+        </CalendarHeatmap>
       </div>
 
       {/* 5. Footer Metadata */}

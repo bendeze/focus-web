@@ -1,44 +1,67 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { useStore } from '../store/useStore';
 import { api } from '../services/api';
-import type { FocusSession, FocusStats, Task } from '../types';
+import { soundManager } from '../utils/sound';
+import type { FocusSession, FocusStats, Project, Task } from '../types';
 import {
-  BarChart,
-  Bar,
-  XAxis,
-  YAxis,
-  Tooltip,
-  ResponsiveContainer,
-  Cell,
-  PieChart,
-  Pie,
-} from 'recharts';
-import {
-  Flame,
-  CheckCircle2,
-  Clock,
-  BarChart3,
-  TrendingUp,
-} from 'lucide-react';
+  AnalyticsHeader,
+  AnalyticsKpiCards,
+  DailySprintWidget,
+  MilestoneProgressWidget,
+  ActivityHeatmapWidget,
+  ProjectTasksTable,
+  groupCompletedTasksByDate,
+  calculateTotalFocusMinutes,
+  calculateWeeklyChartData,
+  calculateActivityData,
+  getWeekRangeLabel,
+  parseToDateKey,
+} from './analytics';
+import { EditProjectModal } from './projects';
+import { EditTaskModal } from './tasks';
 
 interface AnalyticsViewProps {
   stats: FocusStats | null;
   tasks: Task[];
+  projects?: Project[];
+  onRefresh?: () => Promise<void> | void;
+  onOpenAuth?: () => void;
 }
 
 export const AnalyticsView: React.FC<AnalyticsViewProps> = ({
   stats,
   tasks,
+  projects = [],
+  onRefresh,
+  onOpenAuth,
 }) => {
-  const { user, theme } = useStore();
-  const [sessions, setSessions] = useState<FocusSession[]>([]);
+  const {
+    user,
+    theme,
+    analyticsProjectId,
+    setAnalyticsProjectId,
+    setTaskProjectFilter,
+    setActiveTab,
+    selectAndStartTask,
+    clearTaskTimer,
+    addToast,
+  } = useStore();
 
-  const loadSessions = React.useCallback(async () => {
+  const [sessions, setSessions] = useState<FocusSession[]>([]);
+  const [taskTableTab, setTaskTableTab] = useState<'all' | 'todo' | 'completed'>('all');
+  const [chartMetric, setChartMetric] = useState<'tasks' | 'time'>('tasks');
+  const [weekOffset, setWeekOffset] = useState<number>(0);
+  const [selectedDateKey, setSelectedDateKey] = useState<string | null>(null);
+  const [editingProject, setEditingProject] = useState<Project | null>(null);
+  const [editingTask, setEditingTask] = useState<Task | null>(null);
+
+  // Load sessions from API
+  const loadSessions = useCallback(async () => {
     try {
       const data = await api.listFocusSessions();
       setSessions(data);
     } catch {
-      // ignore
+      // quiet fail
     }
   }, []);
 
@@ -48,263 +71,290 @@ export const AnalyticsView: React.FC<AnalyticsViewProps> = ({
     }
   }, [user, loadSessions]);
 
-  const chartData = React.useMemo(() => {
-    const days = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
-    const result: { day: string; minutes: number; fullDate: string }[] = [];
-    const now = Date.now();
+  // Active Projects
+  const activeProjects = useMemo(
+    () => projects.filter((p) => !p.is_deleted),
+    [projects]
+  );
 
-    for (let i = 6; i >= 0; i--) {
-      const d = new Date(now - i * 24 * 60 * 60 * 1000);
-      const dayName = days[d.getDay()];
-      const dateStr = d.toISOString().split('T')[0];
+  const currentProject = useMemo(() => {
+    if (!analyticsProjectId) return null;
+    return activeProjects.find((p) => p.id === analyticsProjectId) || null;
+  }, [activeProjects, analyticsProjectId]);
 
-      const totalSecs = sessions
-        .filter((s) => s.status === 'completed' && s.started_at.startsWith(dateStr))
-        .reduce((sum, s) => sum + (s.actual_focus_seconds || s.duration_minutes * 60), 0);
+  // Filter tasks belonging to current project or all workspace
+  const scopeTasks = useMemo(() => {
+    if (currentProject) {
+      return tasks.filter((t) => t.project_id === currentProject.id && !t.is_deleted);
+    }
+    return tasks.filter((t) => !t.is_deleted);
+  }, [tasks, currentProject]);
 
-      result.push({
-        day: dayName,
-        minutes: Math.round(totalSecs / 60),
-        fullDate: dateStr,
+  const completedTasks = useMemo(
+    () => scopeTasks.filter((t) => t.status === 'completed'),
+    [scopeTasks]
+  );
+
+  const pendingTasks = useMemo(
+    () => scopeTasks.filter((t) => t.status !== 'completed' && t.status !== 'cancelled'),
+    [scopeTasks]
+  );
+
+  // Filter sessions belonging to tasks in scope
+  const scopeSessions = useMemo(() => {
+    if (currentProject) {
+      const pTaskIds = new Set(scopeTasks.map((t) => t.id));
+      return sessions.filter((s) => s.status === 'completed' && pTaskIds.has(s.task_id));
+    }
+    return sessions.filter((s) => s.status === 'completed');
+  }, [sessions, scopeTasks, currentProject]);
+
+  // Group completed tasks by date string
+  const completedTasksByDate = useMemo(() => {
+    return groupCompletedTasksByDate(completedTasks);
+  }, [completedTasks]);
+
+  // Dynamic Metrics
+  const totalFocusMinutes = useMemo(() => {
+    return calculateTotalFocusMinutes(scopeSessions, completedTasks, currentProject, stats);
+  }, [scopeSessions, completedTasks, currentProject, stats]);
+
+  const totalFocusHours = (totalFocusMinutes / 60).toFixed(1);
+
+  const completionRate = useMemo(() => {
+    return scopeTasks.length > 0
+      ? Math.round((completedTasks.length / scopeTasks.length) * 100)
+      : 0;
+  }, [scopeTasks, completedTasks]);
+
+  // 16-Week Activity Heatmap Data
+  const activityData = useMemo(() => {
+    return calculateActivityData(completedTasksByDate);
+  }, [completedTasksByDate]);
+
+  // 7-Day Sprint Focus & Task Distribution
+  const targetWeekDate = useMemo(() => {
+    const today = new Date();
+    if (weekOffset === 0) return today;
+    const d = new Date(today);
+    d.setDate(d.getDate() + weekOffset * 7);
+    return d;
+  }, [weekOffset]);
+
+  const weekRangeLabel = useMemo(() => {
+    return getWeekRangeLabel(targetWeekDate, weekOffset);
+  }, [targetWeekDate, weekOffset]);
+
+  const weeklyChartData = useMemo(() => {
+    return calculateWeeklyChartData(targetWeekDate, scopeSessions, completedTasksByDate);
+  }, [targetWeekDate, scopeSessions, completedTasksByDate]);
+
+  const thisWeekTotalMinutes = useMemo(() => {
+    return weeklyChartData.reduce((acc, d) => acc + d.minutes, 0);
+  }, [weeklyChartData]);
+
+  const thisWeekTotalTasks = useMemo(() => {
+    return weeklyChartData.reduce((acc, d) => acc + d.tasksCompleted, 0);
+  }, [weeklyChartData]);
+
+  const maxWeeklyTasks = useMemo(() => {
+    const max = Math.max(...weeklyChartData.map((d) => d.tasksCompleted), 0);
+    return Math.max(max, 3);
+  }, [weeklyChartData]);
+
+  const maxWeeklyMinutes = useMemo(() => {
+    const max = Math.max(...weeklyChartData.map((d) => d.minutes), 0);
+    return Math.max(max, 60);
+  }, [weeklyChartData]);
+
+  const avgEstimationMinutes = useMemo(() => {
+    if (scopeTasks.length === 0) return 25;
+    return Math.round(
+      scopeTasks.reduce((acc, t) => acc + (t.estimated_minutes || 25), 0) / scopeTasks.length
+    );
+  }, [scopeTasks]);
+
+  // Filtered task table items (tab + optional day filter)
+  const tableTasks = useMemo(() => {
+    let list = scopeTasks;
+    if (taskTableTab === 'todo') list = pendingTasks;
+    else if (taskTableTab === 'completed') list = completedTasks;
+
+    if (selectedDateKey) {
+      list = list.filter((t) => {
+        const dateKey =
+          parseToDateKey(t.completed_at) ||
+          parseToDateKey(t.updated_at) ||
+          parseToDateKey(t.created_at);
+        return dateKey === selectedDateKey;
       });
     }
-    return result;
-  }, [sessions]);
+    return list;
+  }, [taskTableTab, pendingTasks, completedTasks, scopeTasks, selectedDateKey]);
 
-  const totalFocusHours = stats ? (stats.total_focus_minutes / 60).toFixed(1) : '0.0';
-  const completedTasksCount = tasks.filter((t) => t.status === 'completed' && !t.is_deleted).length;
-  const activeTasksCount = tasks.filter((t) => t.status !== 'completed' && !t.is_deleted).length;
-  const totalTasksCount = completedTasksCount + activeTasksCount;
-  const completionRate = totalTasksCount > 0 ? Math.round((completedTasksCount / totalTasksCount) * 100) : 0;
+  // Toggle Task Status
+  const handleToggleTaskStatus = async (task: Task) => {
+    if (!user) {
+      onOpenAuth?.();
+      return;
+    }
+    const nextStatus = task.status === 'completed' ? 'todo' : 'completed';
+    try {
+      await api.updateTask(task.id, { status: nextStatus });
+      if (nextStatus === 'completed') {
+        clearTaskTimer(task.id);
+        soundManager.playComplete();
+      }
+      await loadSessions();
+      onRefresh?.();
+      addToast(
+        nextStatus === 'completed'
+          ? `Completed "${task.title}"`
+          : `Moved "${task.title}" to To Do`,
+        'success'
+      );
+    } catch (err: any) {
+      addToast(err.message || 'Failed to update task', 'error');
+    }
+  };
 
-  const pieData = [
-    { name: 'Completed', value: completedTasksCount },
-    { name: 'Pending', value: activeTasksCount },
-  ];
+  // Start Sprint on clicked task
+  const handleStartTaskSprint = (task: Task) => {
+    selectAndStartTask(task.id, task.estimated_minutes);
+    soundManager.playStart();
+    addToast(`Focus sprint started for "${task.title}"`, 'success');
+    setActiveTab('dashboard');
+  };
+
+  // Delete task directly
+  const handleDeleteTask = async (taskId: string) => {
+    if (!confirm('Are you sure you want to delete this task?')) return;
+    try {
+      await api.deleteTask(taskId);
+      addToast('Task deleted', 'info');
+      await loadSessions();
+      onRefresh?.();
+    } catch (err: any) {
+      addToast(err.message || 'Failed to delete task', 'error');
+    }
+  };
 
   return (
-    <div className="max-w-5xl mx-auto py-8 px-4 sm:px-6">
-      <div className="mb-8">
-        <div className="flex items-center gap-2 text-xs font-bold tracking-badge uppercase text-light-textSecondary dark:text-dark-textSecondary mb-1">
-          <BarChart3 className="w-3.5 h-3.5" />
-          <span>Productivity Insights</span>
-        </div>
-        <h1 className="text-2xl sm:text-3xl font-extrabold tracking-tight text-light-text dark:text-dark-text">
-          Performance & Metrics
-        </h1>
-      </div>
+    <div className="w-full max-w-7xl mx-auto py-8 px-6 md:px-10 flex flex-col gap-8 transition-colors select-none">
+      {/* 1. Header with Breadcrumbs & Switcher */}
+      <AnalyticsHeader
+        currentProject={currentProject}
+        activeProjects={activeProjects}
+        analyticsProjectId={analyticsProjectId}
+        onSelectProject={(id) => setAnalyticsProjectId(id)}
+        onBackToProjects={() => {
+          setAnalyticsProjectId(null);
+          setActiveTab('projects');
+        }}
+        onViewBacklog={(pId) => {
+          setTaskProjectFilter(pId);
+          setActiveTab('tasks');
+        }}
+        onEditProject={(proj) => setEditingProject(proj)}
+      />
 
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
-        <div className="p-5 rounded-3xl bg-light-surface dark:bg-dark-surface border border-light-border dark:border-dark-border shadow-sm flex flex-col justify-between">
-          <div className="flex items-center justify-between text-light-textSecondary dark:text-dark-textSecondary mb-3">
-            <span className="text-[10px] font-bold uppercase tracking-badge">Total Focus</span>
-            <Flame className="w-4 h-4 text-light-text dark:text-dark-text" />
-          </div>
-          <div>
-            <div className="text-2xl sm:text-3xl font-black tabular-nums text-light-text dark:text-dark-text">
-              {totalFocusHours} <span className="text-xs font-semibold text-light-textSecondary dark:text-dark-textSecondary">hrs</span>
-            </div>
-            <p className="text-[11px] text-light-textSecondary dark:text-dark-textSecondary mt-1">
-              {stats?.total_focus_minutes || 0} minutes logged
-            </p>
-          </div>
-        </div>
+      {/* 2. Dynamic KPI Cards */}
+      <AnalyticsKpiCards
+        totalFocusHours={totalFocusHours}
+        totalFocusMinutes={totalFocusMinutes}
+        pendingCount={pendingTasks.length}
+        completedCount={completedTasks.length}
+        totalCount={scopeTasks.length}
+        completionRate={completionRate}
+      />
 
-        <div className="p-5 rounded-3xl bg-light-surface dark:bg-dark-surface border border-light-border dark:border-dark-border shadow-sm flex flex-col justify-between">
-          <div className="flex items-center justify-between text-light-textSecondary dark:text-dark-textSecondary mb-3">
-            <span className="text-[10px] font-bold uppercase tracking-badge">Completed Sprints</span>
-            <Clock className="w-4 h-4 text-light-text dark:text-dark-text" />
-          </div>
-          <div>
-            <div className="text-2xl sm:text-3xl font-black tabular-nums text-light-text dark:text-dark-text">
-              {stats?.completed_sessions_count || 0}
-            </div>
-            <p className="text-[11px] text-light-textSecondary dark:text-dark-textSecondary mt-1">
-              {stats?.total_sessions_count || 0} total sessions
-            </p>
-          </div>
-        </div>
-
-        <div className="p-5 rounded-3xl bg-light-surface dark:bg-dark-surface border border-light-border dark:border-dark-border shadow-sm flex flex-col justify-between">
-          <div className="flex items-center justify-between text-light-textSecondary dark:text-dark-textSecondary mb-3">
-            <span className="text-[10px] font-bold uppercase tracking-badge">Tasks Done</span>
-            <CheckCircle2 className="w-4 h-4 text-light-text dark:text-dark-text" />
-          </div>
-          <div>
-            <div className="text-2xl sm:text-3xl font-black tabular-nums text-light-text dark:text-dark-text">
-              {completedTasksCount}
-            </div>
-            <p className="text-[11px] text-light-textSecondary dark:text-dark-textSecondary mt-1">
-              {activeTasksCount} in backlog
-            </p>
-          </div>
+      {/* 3. Daily Sprint Distribution & Milestone Health Row */}
+      <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
+        <div className="lg:col-span-7">
+          <DailySprintWidget
+            weeklyChartData={weeklyChartData}
+            weekRangeLabel={weekRangeLabel}
+            chartMetric={chartMetric}
+            onToggleMetric={setChartMetric}
+            weekOffset={weekOffset}
+            onPrevWeek={() => setWeekOffset((prev) => prev - 1)}
+            onNextWeek={() => setWeekOffset((prev) => prev + 1)}
+            onResetWeek={() => setWeekOffset(0)}
+            selectedDateKey={selectedDateKey}
+            onSelectDate={setSelectedDateKey}
+            thisWeekTotalTasks={thisWeekTotalTasks}
+            thisWeekTotalMinutes={thisWeekTotalMinutes}
+            maxWeeklyTasks={maxWeeklyTasks}
+            maxWeeklyMinutes={maxWeeklyMinutes}
+          />
         </div>
 
-        <div className="p-5 rounded-3xl bg-light-surface dark:bg-dark-surface border border-light-border dark:border-dark-border shadow-sm flex flex-col justify-between">
-          <div className="flex items-center justify-between text-light-textSecondary dark:text-dark-textSecondary mb-3">
-            <span className="text-[10px] font-bold uppercase tracking-badge">Velocity</span>
-            <TrendingUp className="w-4 h-4 text-light-text dark:text-dark-text" />
-          </div>
-          <div>
-            <div className="text-2xl sm:text-3xl font-black tabular-nums text-light-text dark:text-dark-text">
-              {completionRate}%
-            </div>
-            <p className="text-[11px] text-light-textSecondary dark:text-dark-textSecondary mt-1">
-              Task completion rate
-            </p>
-          </div>
+        <div className="lg:col-span-5">
+          <MilestoneProgressWidget
+            completedCount={completedTasks.length}
+            totalCount={scopeTasks.length}
+            completionRate={completionRate}
+            pendingCount={pendingTasks.length}
+            sessionsCount={scopeSessions.length}
+            avgEstimationMinutes={avgEstimationMinutes}
+            onOpenBacklog={() => {
+              if (currentProject) {
+                setTaskProjectFilter(currentProject.id);
+              }
+              setActiveTab('tasks');
+            }}
+          />
         </div>
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-8">
-        <div className="lg:col-span-2 p-6 rounded-3xl bg-light-surface dark:bg-dark-surface border border-light-border dark:border-dark-border shadow-sm">
-          <div className="flex items-center justify-between mb-6">
-            <div>
-              <h3 className="text-sm font-bold uppercase tracking-badge text-light-text dark:text-dark-text">
-                Focus Time (Last 7 Days)
-              </h3>
-              <p className="text-xs text-light-textSecondary dark:text-dark-textSecondary mt-0.5">
-                Daily sprint duration in minutes
-              </p>
-            </div>
-            <span className="text-[11px] font-bold uppercase tracking-widest px-2.5 py-1 rounded-full bg-light-fill dark:bg-dark-fill text-light-textSecondary dark:text-dark-textSecondary border border-light-border dark:border-dark-border">
-              Weekly
-            </span>
-          </div>
+      {/* 4. 16-Week Activity Heatmap */}
+      <ActivityHeatmapWidget
+        title={currentProject ? `${currentProject.title} Activity` : 'Daily Activity'}
+        completedCount={completedTasks.length}
+        activityData={activityData}
+        completedTasksByDate={completedTasksByDate}
+        theme={theme}
+      />
 
-          <div className="h-64 w-full">
-            <ResponsiveContainer width="100%" height="100%">
-              <BarChart data={chartData} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
-                <XAxis
-                  dataKey="day"
-                  stroke={theme === 'dark' ? '#A0A0A0' : '#757575'}
-                  fontSize={11}
-                  tickLine={false}
-                  axisLine={false}
-                />
-                <YAxis
-                  stroke={theme === 'dark' ? '#A0A0A0' : '#757575'}
-                  fontSize={11}
-                  tickLine={false}
-                  axisLine={false}
-                  unit="m"
-                />
-                <Tooltip
-                  cursor={{ fill: theme === 'dark' ? '#222226' : '#EAEAEA' }}
-                  contentStyle={{
-                    backgroundColor: theme === 'dark' ? '#141416' : '#FFFFFF',
-                    borderColor: theme === 'dark' ? '#2A2A2E' : '#E0E0E0',
-                    borderRadius: '16px',
-                    color: theme === 'dark' ? '#FFFFFF' : '#000000',
-                    fontSize: '12px',
-                    boxShadow: '0 10px 25px rgba(0,0,0,0.2)',
-                  }}
-                  formatter={(value: any) => [`${value} minutes`, 'Focus Time']}
-                />
-                <Bar dataKey="minutes" radius={[6, 6, 0, 0]}>
-                  {chartData.map((_, index) => (
-                    <Cell
-                      key={`cell-${index}`}
-                      fill={theme === 'dark' ? '#FFFFFF' : '#000000'}
-                    />
-                  ))}
-                </Bar>
-              </BarChart>
-            </ResponsiveContainer>
-          </div>
-        </div>
+      {/* 5. Filterable Tasks Table */}
+      <ProjectTasksTable
+        currentProject={currentProject}
+        tasks={tableTasks}
+        allCount={scopeTasks.length}
+        todoCount={pendingTasks.length}
+        completedCount={completedTasks.length}
+        activeTab={taskTableTab}
+        onTabChange={setTaskTableTab}
+        selectedDateKey={selectedDateKey}
+        onClearDateFilter={() => setSelectedDateKey(null)}
+        onToggleTaskStatus={handleToggleTaskStatus}
+        onStartTaskSprint={handleStartTaskSprint}
+        onEditTask={(task) => setEditingTask(task)}
+        onDeleteTask={handleDeleteTask}
+      />
 
-        <div className="p-6 rounded-3xl bg-light-surface dark:bg-dark-surface border border-light-border dark:border-dark-border shadow-sm flex flex-col justify-between">
-          <div>
-            <h3 className="text-sm font-bold uppercase tracking-badge text-light-text dark:text-dark-text mb-1">
-              Backlog Ratio
-            </h3>
-            <p className="text-xs text-light-textSecondary dark:text-dark-textSecondary">
-              Completed vs active tasks
-            </p>
+      {/* 6. Edit Project Modal */}
+      <EditProjectModal
+        project={editingProject}
+        isOpen={Boolean(editingProject)}
+        onClose={() => setEditingProject(null)}
+        onRefresh={() => {
+          onRefresh?.();
+        }}
+      />
 
-            <div className="h-44 w-full flex items-center justify-center my-4">
-              <ResponsiveContainer width="100%" height="100%">
-                <PieChart>
-                  <Pie
-                    data={pieData}
-                    cx="50%"
-                    cy="50%"
-                    innerRadius={45}
-                    outerRadius={65}
-                    paddingAngle={4}
-                    dataKey="value"
-                  >
-                    <Cell fill={theme === 'dark' ? '#FFFFFF' : '#000000'} />
-                    <Cell fill={theme === 'dark' ? '#2A2A2E' : '#D0D0D5'} />
-                  </Pie>
-                </PieChart>
-              </ResponsiveContainer>
-            </div>
-          </div>
-
-          <div className="space-y-2 pt-2 border-t border-light-border dark:border-dark-border text-xs">
-            <div className="flex items-center justify-between">
-              <span className="flex items-center gap-2">
-                <span className="w-2.5 h-2.5 rounded-full bg-light-text dark:bg-dark-text" />
-                <span>Completed Tasks</span>
-              </span>
-              <span className="font-bold tabular-nums">{completedTasksCount}</span>
-            </div>
-
-            <div className="flex items-center justify-between text-light-textSecondary dark:text-dark-textSecondary">
-              <span className="flex items-center gap-2">
-                <span className="w-2.5 h-2.5 rounded-full bg-light-fill dark:bg-dark-fill border border-light-border dark:border-dark-border" />
-                <span>Pending in Backlog</span>
-              </span>
-              <span className="font-bold tabular-nums">{activeTasksCount}</span>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      <div className="p-6 rounded-3xl bg-light-surface dark:bg-dark-surface border border-light-border dark:border-dark-border shadow-sm">
-        <h3 className="text-sm font-bold uppercase tracking-badge text-light-text dark:text-dark-text mb-4">
-          Recent Focus History
-        </h3>
-
-        {sessions.length === 0 ? (
-          <p className="text-xs text-light-textSecondary dark:text-dark-textSecondary py-4 text-center">
-            No completed sessions recorded yet. Start a timer in Focus Mode!
-          </p>
-        ) : (
-          <div className="divide-y divide-light-border dark:divide-dark-border">
-            {sessions.slice(0, 5).map((s) => {
-              const sessionTask = tasks.find((t) => t.id === s.task_id);
-              const durationMins = Math.round((s.actual_focus_seconds || s.duration_minutes * 60) / 60);
-
-              return (
-                <div key={s.id} className="py-3 flex items-center justify-between gap-4 text-xs">
-                  <div className="flex items-center gap-3 min-w-0">
-                    <div className="w-7 h-7 rounded-full bg-light-fill dark:bg-dark-fill flex items-center justify-center flex-shrink-0">
-                      <Clock className="w-3.5 h-3.5 text-light-text dark:text-dark-text" />
-                    </div>
-                    <div className="min-w-0">
-                      <p className="font-semibold text-light-text dark:text-dark-text truncate">
-                        {sessionTask?.title || 'Sprint Session'}
-                      </p>
-                      <p className="text-[10px] text-light-textSecondary dark:text-dark-textSecondary mt-0.5">
-                        {new Date(s.started_at).toLocaleDateString()} at{' '}
-                        {new Date(s.started_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-                        {s.notes && ` — "${s.notes}"`}
-                      </p>
-                    </div>
-                  </div>
-
-                  <span className="font-bold tabular-nums text-light-text dark:text-dark-text flex-shrink-0">
-                    +{durationMins}m
-                  </span>
-                </div>
-              );
-            })}
-          </div>
-        )}
-      </div>
+      {/* 7. Edit Task Modal */}
+      <EditTaskModal
+        task={editingTask}
+        projects={projects}
+        isOpen={Boolean(editingTask)}
+        onClose={() => setEditingTask(null)}
+        onDelete={handleDeleteTask}
+        onRefresh={async () => {
+          await loadSessions();
+          onRefresh?.();
+        }}
+      />
     </div>
   );
 };

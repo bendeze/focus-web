@@ -10,6 +10,7 @@ from app.models.user import User
 from app.models.task import Task
 from app.models.focus import (
     FocusCompleteRequest,
+    FocusPauseRequest,
     FocusSession,
     FocusSessionResponse,
     FocusStartRequest,
@@ -64,32 +65,49 @@ def start_focus_session(
             detail="Task not found"
         )
 
+    now = datetime.now(timezone.utc)
+
     # 2. Check if user already has an active session
     active_session = db.exec(
         select(FocusSession).where(
             FocusSession.user_id == current_user.id,
             FocusSession.is_deleted == False,
-            or_(
-                FocusSession.status == "active",
-                FocusSession.status == "paused"
-            )
+            FocusSession.status == "active"
         )
     ).first()
     if active_session:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"You already have an active focus session (ID: {active_session.id}). Please complete or cancel it first."
-        )
+        if active_session.task_id == task.id:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"You already have an active focus session (ID: {active_session.id}). Please complete or cancel it first."
+            )
+        else:
+            active_session.status = "paused"
+            if active_session.started_at:
+                elapsed = int((now - active_session.started_at).total_seconds())
+                active_session.actual_focus_seconds = (active_session.actual_focus_seconds or 0) + max(0, elapsed)
+            active_session.updated_at = now
+            db.add(active_session)
 
-    now = datetime.now(timezone.utc)
+    # If this task already has an existing paused session, resume it to keep its paused time
+    existing_paused = db.exec(
+        select(FocusSession).where(
+            FocusSession.user_id == current_user.id,
+            FocusSession.task_id == task.id,
+            FocusSession.is_deleted == False,
+            FocusSession.status == "paused"
+        ).order_by(FocusSession.updated_at.desc())
+    ).first()
+    if existing_paused:
+        existing_paused.status = "active"
+        existing_paused.started_at = now
+        existing_paused.updated_at = now
+        db.add(existing_paused)
+        db.commit()
+        db.refresh(existing_paused)
+        return FocusSessionResponse.model_validate(existing_paused)
 
-    # 3. Automatically transition task to 'in_progress' if currently 'todo'
-    if task.status == "todo":
-        task.status = "in_progress"
-        task.updated_at = now
-        db.add(task)
-
-    # 4. Create focus session
+    # 3. Create focus session
     duration = focus_in.duration_minutes or task.estimated_minutes or 25
     auto_complete = True if focus_in.auto_complete_task is None else focus_in.auto_complete_task
 
@@ -120,17 +138,30 @@ def start_focus_session(
 def get_current_session(
     current_user: Annotated[User, Depends(get_current_user)],
     db: Annotated[Session, Depends(get_db)],
+    task_id: Optional[uuid.UUID] = Query(None, description="Optional task ID to filter session for a specific task"),
 ) -> Optional[FocusSessionResponse]:
-    session = db.exec(
-        select(FocusSession).where(
-            FocusSession.user_id == current_user.id,
-            FocusSession.is_deleted == False,
+    query = select(FocusSession).where(
+        FocusSession.user_id == current_user.id,
+        FocusSession.is_deleted == False,
+    )
+    if task_id is not None:
+        query = query.where(
+            FocusSession.task_id == task_id,
             or_(
                 FocusSession.status == "active",
                 FocusSession.status == "paused"
             )
         )
-    ).first()
+    else:
+        # Prioritize active session, then most recent paused session
+        active_sess = db.exec(
+            query.where(FocusSession.status == "active").order_by(FocusSession.updated_at.desc())
+        ).first()
+        if active_sess:
+            return FocusSessionResponse.model_validate(active_sess)
+        query = query.where(FocusSession.status == "paused")
+
+    session = db.exec(query.order_by(FocusSession.updated_at.desc())).first()
     if not session:
         return None
     return FocusSessionResponse.model_validate(session)
@@ -179,6 +210,7 @@ def pause_focus_session(
     session_id: uuid.UUID,
     current_user: Annotated[User, Depends(get_current_user)],
     db: Annotated[Session, Depends(get_db)],
+    pause_in: Optional[FocusPauseRequest] = None,
 ) -> FocusSessionResponse:
     session = db.get(FocusSession, session_id)
     if not session or session.user_id != current_user.id or session.is_deleted:
@@ -188,6 +220,12 @@ def pause_focus_session(
         )
 
     if session.status == "paused":
+        if pause_in and pause_in.actual_focus_seconds is not None:
+            session.actual_focus_seconds = max(0, pause_in.actual_focus_seconds)
+            session.updated_at = datetime.now(timezone.utc)
+            db.add(session)
+            db.commit()
+            db.refresh(session)
         return FocusSessionResponse.model_validate(session)
 
     if session.status != "active":
@@ -196,8 +234,15 @@ def pause_focus_session(
             detail=f"Cannot pause session in '{session.status}' state"
         )
 
+    now = datetime.now(timezone.utc)
     session.status = "paused"
-    session.updated_at = datetime.now(timezone.utc)
+    if pause_in and pause_in.actual_focus_seconds is not None:
+        session.actual_focus_seconds = max(0, pause_in.actual_focus_seconds)
+    elif session.started_at:
+        elapsed = int((now - session.started_at).total_seconds())
+        session.actual_focus_seconds = (session.actual_focus_seconds or 0) + max(0, elapsed)
+    session.updated_at = now
+
     db.add(session)
     db.commit()
     db.refresh(session)
@@ -230,8 +275,11 @@ def resume_focus_session(
             detail=f"Cannot resume session in '{session.status}' state"
         )
 
+    now = datetime.now(timezone.utc)
     session.status = "active"
-    session.updated_at = datetime.now(timezone.utc)
+    session.started_at = now
+    session.updated_at = now
+
     db.add(session)
     db.commit()
     db.refresh(session)
@@ -355,7 +403,7 @@ def delete_focus_session(
     session_id: uuid.UUID,
     current_user: Annotated[User, Depends(get_current_user)],
     db: Annotated[Session, Depends(get_db)],
-):
+) -> None:
     session = db.get(FocusSession, session_id)
     if not session or session.user_id != current_user.id or session.is_deleted:
         raise HTTPException(

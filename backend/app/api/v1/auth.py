@@ -264,4 +264,4 @@ def logout(
     Logout endpoint for mobile & web clients.
     Client should discard the stored access token.
     """
-    return MessageResponse(message=f"Successfully logged out user {current_user.username or current_user.email}")
+    return MessageResponse(message="Successfully logged out")

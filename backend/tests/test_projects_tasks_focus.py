@@ -146,6 +146,16 @@ def test_standalone_and_project_tasks(client: TestClient):
     assert len(filter_standalone.json()) == 1
     assert filter_standalone.json()[0]["title"] == "Quick Idea Note"
 
+    # 6. Test limit and offset pagination
+    page1 = client.get("/api/v1/tasks?limit=1&offset=0", headers=headers)
+    assert page1.status_code == 200
+    assert len(page1.json()) == 1
+
+    page2 = client.get("/api/v1/tasks?limit=1&offset=1", headers=headers)
+    assert page2.status_code == 200
+    assert len(page2.json()) == 1
+    assert page1.json()[0]["id"] != page2.json()[0]["id"]
+
 
 def test_task_reordering(client: TestClient):
     headers, _ = _get_auth_headers(client, "agile_scrum")
@@ -199,9 +209,9 @@ def test_focus_session_flow_and_auto_completion(client: TestClient):
     assert session["status"] == "active"
     assert session["task_id"] == task_id
 
-    # Check task moved to in_progress
+    # Task remains todo while focus session is running
     task_check = client.get(f"/api/v1/tasks/{task_id}", headers=headers).json()
-    assert task_check["status"] == "in_progress"
+    assert task_check["status"] == "todo"
 
     # 3. Check /current endpoint
     curr_res = client.get("/api/v1/focus/current", headers=headers)
@@ -221,10 +231,14 @@ def test_focus_session_flow_and_auto_completion(client: TestClient):
     pause_res = client.post(f"/api/v1/focus/{session_id}/pause", headers=headers)
     assert pause_res.status_code == 200
     assert pause_res.json()["status"] == "paused"
+    task_paused = client.get(f"/api/v1/tasks/{task_id}", headers=headers).json()
+    assert task_paused["status"] == "todo"
 
     resume_res = client.post(f"/api/v1/focus/{session_id}/resume", headers=headers)
     assert resume_res.status_code == 200
     assert resume_res.json()["status"] == "active"
+    task_resumed = client.get(f"/api/v1/tasks/{task_id}", headers=headers).json()
+    assert task_resumed["status"] == "todo"
 
     # 6. Complete Session (Timer finishes)
     comp_res = client.post(
@@ -471,5 +485,50 @@ def test_x_idempotency_key_creation_endpoints(client: TestClient):
     )
     assert inv_res.status_code == 400
     assert "Invalid X-Idempotency-Key format" in inv_res.json()["detail"]
+
+
+def test_task_pause_and_resume_endpoints(client: TestClient):
+    headers, _ = _get_auth_headers(client, "pause_tester")
+
+    # 1. Create a task
+    t_res = client.post(
+        "/api/v1/tasks",
+        headers=headers,
+        json={"title": "Test Pausing Task", "estimated_minutes": 25}
+    )
+    assert t_res.status_code == 201
+    task_id = t_res.json()["id"]
+
+    # 2. Start a focus session for this task
+    s_res = client.post(
+        "/api/v1/focus/start",
+        headers=headers,
+        json={"task_id": task_id, "duration_minutes": 25}
+    )
+    assert s_res.status_code == 201
+    assert s_res.json()["status"] == "active"
+
+    # Task remains todo while focus session is active
+    check_task = client.get(f"/api/v1/tasks/{task_id}", headers=headers).json()
+    assert check_task["status"] == "todo"
+
+    # 3. Post to /api/v1/tasks/{task_id}/pause
+    pause_res = client.post(f"/api/v1/tasks/{task_id}/pause", headers=headers)
+    assert pause_res.status_code == 200
+    assert pause_res.json()["status"] == "todo"
+
+    # Verify session is also paused
+    curr_sess = client.get("/api/v1/focus/current", headers=headers).json()
+    assert curr_sess["status"] == "paused"
+
+    # 4. Post to /api/v1/tasks/{task_id}/resume
+    resume_res = client.post(f"/api/v1/tasks/{task_id}/resume", headers=headers)
+    assert resume_res.status_code == 200
+    assert resume_res.json()["status"] == "todo"
+
+    # Verify session is also active
+    curr_sess_after = client.get("/api/v1/focus/current", headers=headers).json()
+    assert curr_sess_after["status"] == "active"
+
 
 

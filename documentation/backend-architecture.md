@@ -53,41 +53,38 @@ backend/
 
 The backend implements a classic layered architecture pattern:
 
-```
-+-------------------------------------------------------------+
-|                      HTTP Layer                             |
-|  - CORS Middleware (FastAPI / Starlette)                    |
-|  - Exception Handlers                                       |
-+-------------------------------------------------------------+
-                              |
-                              v
-+-------------------------------------------------------------+
-|                     Routing Layer                           |
-|  - APIRouter modules: auth, projects, tasks, focus          |
-|  - URL routing, HTTP verb matching, status codes            |
-+-------------------------------------------------------------+
-                              |
-                              v
-+-------------------------------------------------------------+
-|               Dependency Injection Layer                    |
-|  - get_db: Session provisioning with context teardown       |
-|  - get_current_user: Bearer JWT validation and user lookup  |
-+-------------------------------------------------------------+
-                              |
-                              v
-+-------------------------------------------------------------+
-|             Validation & Domain Logic Layer                 |
-|  - Pydantic v2 model validators (schemas)                   |
-|  - Idempotency resolution (X-Idempotency-Key)               |
-|  - Batch calculations (aggregation of task/session metrics) |
-+-------------------------------------------------------------+
-                              |
-                              v
-+-------------------------------------------------------------+
-|                     Data Access Layer                       |
-|  - SQLModel / SQLAlchemy engine                             |
-|  - SQLite (development) / PostgreSQL (production)           |
-+-------------------------------------------------------------+
+```mermaid
+graph TD
+    subgraph HTTP["HTTP Layer"]
+        H1["CORS Middleware (FastAPI / Starlette)"]
+        H2["Exception Handlers"]
+    end
+
+    subgraph Routing["Routing Layer"]
+        R1["APIRouter Modules: auth, projects, tasks, focus"]
+        R2["URL Routing, HTTP Verb Matching, Status Codes"]
+    end
+
+    subgraph DI["Dependency Injection Layer"]
+        D1["get_db: Session provisioning with context teardown"]
+        D2["get_current_user: Bearer JWT validation and user lookup"]
+    end
+
+    subgraph Domain["Validation & Domain Logic Layer"]
+        V1["Pydantic v2 Model Validators (schemas)"]
+        V2["Idempotency Resolution (X-Idempotency-Key)"]
+        V3["Batch Calculations (aggregation of task/session metrics)"]
+    end
+
+    subgraph DataAccess["Data Access Layer"]
+        DA1["SQLModel / SQLAlchemy Engine"]
+        DA2["SQLite (Development) / PostgreSQL (Production)"]
+    end
+
+    HTTP --> Routing
+    Routing --> DI
+    DI --> Domain
+    Domain --> DataAccess
 ```
 
 ---

@@ -10,62 +10,73 @@ The database schema is modeled using SQLModel (SQLAlchemy 2.0). All primary iden
 
 ### Entity-Relationship Overview
 
-```
-+-------------------------------------------------------+
-|                        users                          |
-+-------------------------------------------------------+
-| id: UUID (PK)                                         |
-| username: VARCHAR (Unique, Index, Nullable)           |
-| email: VARCHAR (Unique, Index, Nullable)              |
-| hashed_password: VARCHAR (Not Null)                   |
-| full_name: VARCHAR (Nullable)                         |
-| avatar_url: VARCHAR (Nullable)                        |
-| is_active: BOOLEAN (Default: True)                    |
-| created_at: TIMESTAMP WITH TIME ZONE                  |
-| updated_at: TIMESTAMP WITH TIME ZONE                  |
-+-------------------------------------------------------+
-        |                               |
-        | 1:N                           | 1:N
-        v                               v
-+-----------------------------+ +-----------------------------+
-|          projects           | |            tasks            |
-+-----------------------------+ +-----------------------------+
-| id: UUID (PK)               | | id: UUID (PK)               |
-| user_id: UUID (FK -> users) | | user_id: UUID (FK -> users) |
-| title: VARCHAR              | | project_id: UUID (FK, Null) |
-| description: TEXT (Null)    | | title: VARCHAR              |
-| status: VARCHAR             | | description: TEXT (Null)    |
-| color: VARCHAR (Null)       | | status: VARCHAR             |
-| icon: VARCHAR (Null)        | | priority: VARCHAR           |
-| is_deleted: BOOLEAN         | | estimated_minutes: INT      |
-| deleted_at: TIMESTAMP       | | order_index: INT            |
-| created_at: TIMESTAMP       | | completed_at: TIMESTAMP     |
-| updated_at: TIMESTAMP       | | is_deleted: BOOLEAN         |
-+-----------------------------+ | deleted_at: TIMESTAMP       |
-               |                | created_at: TIMESTAMP       |
-               | 1:N (Optional) | updated_at: TIMESTAMP       |
-               +--------------->+-----------------------------+
-                                               |
-                                               | 1:N
-                                               v
-                                +-----------------------------+
-                                |       focus_sessions        |
-                                +-----------------------------+
-                                | id: UUID (PK)               |
-                                | user_id: UUID (FK -> users) |
-                                | task_id: UUID (FK -> tasks) |
-                                | duration_minutes: INT       |
-                                | started_at: TIMESTAMP       |
-                                | ended_at: TIMESTAMP (Null)  |
-                                | status: VARCHAR             |
-                                | actual_focus_seconds: INT   |
-                                | auto_complete_task: BOOLEAN |
-                                | notes: TEXT (Null)          |
-                                | is_deleted: BOOLEAN         |
-                                | deleted_at: TIMESTAMP       |
-                                | created_at: TIMESTAMP       |
-                                | updated_at: TIMESTAMP       |
-                                +-----------------------------+
+```mermaid
+erDiagram
+    users ||--o{ projects : "creates"
+    users ||--o{ tasks : "owns"
+    users ||--o{ focus_sessions : "records"
+    projects ||--o{ tasks : "groups"
+    tasks ||--o{ focus_sessions : "tracks"
+
+    users {
+        uuid id PK
+        string username UK "Unique, Index, Nullable"
+        string email UK "Unique, Index, Nullable"
+        string hashed_password "Not Null"
+        string full_name "Nullable"
+        string avatar_url "Nullable"
+        boolean is_active "Default: True"
+        timestamptz created_at
+        timestamptz updated_at
+    }
+
+    projects {
+        uuid id PK
+        uuid user_id FK "References users.id"
+        string title
+        text description "Nullable"
+        string status
+        string color "Nullable"
+        string icon "Nullable"
+        boolean is_deleted "Default: False"
+        timestamptz deleted_at "Nullable"
+        timestamptz created_at
+        timestamptz updated_at
+    }
+
+    tasks {
+        uuid id PK
+        uuid user_id FK "References users.id"
+        uuid project_id FK "Nullable, References projects.id"
+        string title
+        text description "Nullable"
+        string status
+        string priority
+        int estimated_minutes
+        int order_index
+        timestamptz completed_at "Nullable"
+        boolean is_deleted "Default: False"
+        timestamptz deleted_at "Nullable"
+        timestamptz created_at
+        timestamptz updated_at
+    }
+
+    focus_sessions {
+        uuid id PK
+        uuid user_id FK "References users.id"
+        uuid task_id FK "References tasks.id"
+        int duration_minutes
+        timestamptz started_at
+        timestamptz ended_at "Nullable"
+        string status
+        int actual_focus_seconds
+        boolean auto_complete_task
+        text notes "Nullable"
+        boolean is_deleted "Default: False"
+        timestamptz deleted_at "Nullable"
+        timestamptz created_at
+        timestamptz updated_at
+    }
 ```
 
 ---

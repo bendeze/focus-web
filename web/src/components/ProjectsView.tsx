@@ -1,60 +1,87 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import { useStore } from '../store/useStore';
 import { api } from '../services/api';
-import type { Project } from '../types';
-import {
-  Plus,
-  FolderKanban,
-  Flame,
-  Trash2,
-  ArrowRight,
-  Loader2,
-  X,
-} from 'lucide-react';
+import type { Project, Task } from '../types';
+import { Plus, FolderKanban } from 'lucide-react';
+import { ProjectMetrics, ProjectCard, CreateProjectModal, EditProjectModal } from './projects';
 
 interface ProjectsViewProps {
   projects: Project[];
+  tasks?: Task[];
   onRefresh: () => void;
   onOpenAuth?: () => void;
 }
 
 export const ProjectsView: React.FC<ProjectsViewProps> = ({
   projects,
+  tasks = [],
   onRefresh,
   onOpenAuth,
 }) => {
-  const { user, setActiveTab, addToast } = useStore();
+  const {
+    user,
+    setActiveTab,
+    setTaskProjectFilter,
+    setAnalyticsProjectId,
+    addToast,
+  } = useStore();
 
   const [isModalOpen, setIsModalOpen] = useState(false);
-  const [newTitle, setNewTitle] = useState('');
-  const [newDescription, setNewDescription] = useState('');
-  const [submitting, setSubmitting] = useState(false);
+  const [editingProject, setEditingProject] = useState<Project | null>(null);
 
-  const activeProjects = projects.filter((p) => !p.is_deleted);
+  const activeProjects = useMemo(
+    () => projects.filter((p) => !p.is_deleted),
+    [projects]
+  );
 
-  const handleCreateProject = async (e: React.FormEvent) => {
-    e.preventDefault();
+  // 100% Dynamic Global Projects Metrics
+  const projectTasks = useMemo(
+    () => tasks.filter((t) => !t.is_deleted && t.project_id !== null),
+    [tasks]
+  );
+
+  const completedProjectTasks = useMemo(
+    () => projectTasks.filter((t) => t.status === 'completed'),
+    [projectTasks]
+  );
+
+  const backlogProjectTasks = useMemo(
+    () => projectTasks.filter((t) => t.status !== 'completed' && t.status !== 'cancelled'),
+    [projectTasks]
+  );
+
+  const getTaskFocusMinutes = (t: Task) => {
+    if (t.total_focus_minutes > 0) return t.total_focus_minutes;
+    if (t.status === 'completed') return t.estimated_minutes || 25;
+    return 0;
+  };
+
+  const totalProjectFocusMinutes = useMemo(
+    () => projectTasks.reduce((sum, t) => sum + getTaskFocusMinutes(t), 0),
+    [projectTasks]
+  );
+
+  const overallCompletionRate = useMemo(() => {
+    return projectTasks.length > 0
+      ? Math.round((completedProjectTasks.length / projectTasks.length) * 100)
+      : 0;
+  }, [projectTasks, completedProjectTasks]);
+
+  const handleCreateProject = async (title: string, description: string) => {
     if (!user) {
       onOpenAuth?.();
       return;
     }
-    if (!newTitle.trim()) return;
-
-    setSubmitting(true);
     try {
       await api.createProject({
-        title: newTitle.trim(),
-        description: newDescription.trim() || undefined,
+        title,
+        description: description || undefined,
       });
-      setNewTitle('');
-      setNewDescription('');
-      setIsModalOpen(false);
       addToast('Project created', 'success');
       onRefresh();
     } catch (err: any) {
       addToast(err.message || 'Failed to create project', 'error');
-    } finally {
-      setSubmitting(false);
+      throw err;
     }
   };
 
@@ -72,14 +99,20 @@ export const ProjectsView: React.FC<ProjectsViewProps> = ({
   };
 
   return (
-    <div className="max-w-5xl mx-auto py-8 px-4 sm:px-6">
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-8">
-        <div>
-          <div className="flex items-center gap-2 text-xs font-bold tracking-badge uppercase text-light-textSecondary dark:text-dark-textSecondary mb-1">
-            <FolderKanban className="w-3.5 h-3.5" />
-            <span>Project Management</span>
+    <div className="w-full max-w-7xl mx-auto py-8 px-6 md:px-10 flex flex-col gap-8 transition-colors select-none">
+      {/* 1. Header Overview & Actions */}
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-1">
+        <div className="flex flex-col gap-1">
+          <div className="flex items-center gap-2 text-xs font-medium text-zinc-500 dark:text-zinc-400 light:text-zinc-500">
+            <span className="tracking-wide uppercase text-[10px]">
+              Workspace Directory
+            </span>
+            <span className="opacity-40">·</span>
+            <span className="tracking-wide uppercase text-[10px]">
+              {activeProjects.length} {activeProjects.length === 1 ? 'Active Project' : 'Active Projects'}
+            </span>
           </div>
-          <h1 className="text-2xl sm:text-3xl font-extrabold tracking-tight text-light-text dark:text-dark-text">
+          <h1 className="text-2xl sm:text-3xl font-light tracking-tight text-white dark:text-white light:text-black">
             Projects & Goals
           </h1>
         </div>
@@ -89,153 +122,86 @@ export const ProjectsView: React.FC<ProjectsViewProps> = ({
             if (!user) onOpenAuth?.();
             else setIsModalOpen(true);
           }}
-          className="h-11 px-5 rounded-full bg-light-text text-light-bg dark:bg-dark-text dark:text-dark-bg text-xs font-bold tracking-brand uppercase flex items-center gap-2 hover:opacity-90 active:scale-95 transition-all shadow-md self-start sm:self-auto"
+          className="h-9 px-4 rounded-full text-xs font-medium flex items-center gap-2 bg-white dark:bg-white text-black light:bg-black light:text-white hover:opacity-90 active:scale-[0.85] transition-all shadow-sm cursor-pointer self-start sm:self-auto"
         >
-          <Plus className="w-4 h-4 stroke-[2.5]" />
+          <Plus className="w-3.5 h-3.5" />
           <span>New Project</span>
         </button>
       </div>
 
-      {isModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-glass animate-fade-in">
-          <div className="relative w-full max-w-md bg-light-surface dark:bg-dark-surface border border-light-border dark:border-dark-border rounded-3xl p-6 sm:p-8 shadow-2xl animate-slide-up text-light-text dark:text-dark-text">
-            
-            <div className="w-9 h-1 rounded-full bg-light-borderSubtle dark:bg-dark-borderSubtle mx-auto mb-6" />
+      {/* 2. Top Summary KPI Cards */}
+      <ProjectMetrics
+        activeProjectsCount={activeProjects.length}
+        projectTasksCount={projectTasks.length}
+        backlogTasksCount={backlogProjectTasks.length}
+        completedTasksCount={completedProjectTasks.length}
+        totalFocusHours={(totalProjectFocusMinutes / 60).toFixed(1)}
+        totalFocusMinutes={totalProjectFocusMinutes}
+        overallCompletionRate={overallCompletionRate}
+      />
 
-            <button
-              onClick={() => setIsModalOpen(false)}
-              className="absolute top-6 right-6 p-2 rounded-full text-light-textSecondary dark:text-dark-textSecondary hover:text-light-text dark:hover:text-dark-text hover:bg-light-fill dark:hover:bg-dark-fill transition-colors"
-            >
-              <X className="w-5 h-5" />
-            </button>
-
-            <h2 className="text-xl font-bold tracking-brand uppercase mb-1 text-center">
-              New Project
-            </h2>
-            <p className="text-xs text-light-textSecondary dark:text-dark-textSecondary text-center mb-6">
-              Group tasks and track sprint progress for major goals
-            </p>
-
-            <form onSubmit={handleCreateProject} className="space-y-4">
-              <div>
-                <label className="block text-[11px] font-bold uppercase tracking-badge text-light-textSecondary dark:text-dark-textSecondary mb-1.5">
-                  Project Title
-                </label>
-                <input
-                  type="text"
-                  required
-                  placeholder="e.g. Q4 Mobile App Release"
-                  value={newTitle}
-                  onChange={(e) => setNewTitle(e.target.value)}
-                  className="w-full px-4 py-3 rounded-2xl bg-light-card dark:bg-dark-card border border-light-border dark:border-dark-border text-sm font-medium focus:outline-none focus:border-light-text dark:focus:border-dark-text text-light-text dark:text-dark-text"
-                  autoFocus
-                />
-              </div>
-
-              <div>
-                <label className="block text-[11px] font-bold uppercase tracking-badge text-light-textSecondary dark:text-dark-textSecondary mb-1.5">
-                  Description (Optional)
-                </label>
-                <textarea
-                  placeholder="Goals, target milestones, or scope..."
-                  value={newDescription}
-                  onChange={(e) => setNewDescription(e.target.value)}
-                  rows={3}
-                  className="w-full px-4 py-2.5 rounded-2xl bg-light-card dark:bg-dark-card border border-light-border dark:border-dark-border text-xs focus:outline-none focus:border-light-text dark:focus:border-dark-text text-light-text dark:text-dark-text"
-                />
-              </div>
-
-              <button
-                type="submit"
-                disabled={submitting}
-                className="w-full h-12 rounded-full bg-light-text text-light-bg dark:bg-dark-text dark:text-dark-bg text-xs font-bold tracking-brand uppercase flex items-center justify-center gap-2 hover:opacity-90 disabled:opacity-50 transition-all shadow-md mt-4"
-              >
-                {submitting ? <Loader2 className="w-4 h-4 animate-spin" /> : <span>Create Project</span>}
-              </button>
-            </form>
-          </div>
-        </div>
-      )}
-
+      {/* 3. Projects Grid */}
       {activeProjects.length === 0 ? (
-        <div className="p-12 text-center rounded-3xl bg-light-surface dark:bg-dark-surface border border-light-border dark:border-dark-border">
-          <FolderKanban className="w-8 h-8 text-light-textSecondary dark:text-dark-textSecondary mx-auto mb-3 opacity-40" />
-          <p className="text-sm font-semibold text-light-textSecondary dark:text-dark-textSecondary">
-            No active projects yet
+        <div className="p-16 text-center rounded-3xl bg-zinc-950/95 dark:bg-zinc-950/95 light:bg-surface-light border border-subtle-dark dark:border-subtle-dark light:border-subtle-light flex flex-col items-center justify-center gap-3">
+          <div className="w-12 h-12 rounded-2xl bg-zinc-900/80 dark:bg-zinc-900/80 light:bg-zinc-100 flex items-center justify-center text-zinc-500">
+            <FolderKanban className="w-6 h-6" />
+          </div>
+          <h3 className="text-base font-semibold text-white dark:text-white light:text-black">
+            No projects created yet
+          </h3>
+          <p className="text-xs text-zinc-500 dark:text-zinc-400 light:text-zinc-500 max-w-sm">
+            Group your tasks into milestone goals, track deep focus sprints, and analyze project performance.
           </p>
-          <p className="text-xs text-light-textMuted dark:text-dark-textMuted mt-1">
-            Click "New Project" to organize tasks under planning milestones
-          </p>
+          <button
+            onClick={() => {
+              if (!user) onOpenAuth?.();
+              else setIsModalOpen(true);
+            }}
+            className="mt-2 h-9 px-4 rounded-full bg-white dark:bg-white text-black light:bg-black light:text-white text-xs font-semibold hover:opacity-90 active:scale-95 transition-all cursor-pointer"
+          >
+            Create first project
+          </button>
         </div>
       ) : (
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 sm:gap-6">
-          {activeProjects.map((project) => {
-            const percent = project.total_tasks > 0
-              ? Math.round((project.completed_tasks / project.total_tasks) * 100)
-              : 0;
-
-            return (
-              <div
-                key={project.id}
-                onClick={() => setActiveTab('tasks')}
-                className="group p-6 rounded-3xl bg-light-surface dark:bg-dark-surface border border-light-border dark:border-dark-border hover:border-light-text dark:hover:border-dark-text transition-all cursor-pointer shadow-sm hover:shadow-md flex flex-col justify-between"
-              >
-                <div>
-                  <div className="flex items-start justify-between gap-2 mb-3">
-                    <span className="text-[10px] font-bold uppercase tracking-widest px-2.5 py-0.5 rounded-full bg-light-fill dark:bg-dark-fill text-light-textSecondary dark:text-dark-textSecondary border border-light-border dark:border-dark-border">
-                      {project.status}
-                    </span>
-
-                    <button
-                      onClick={(e) => handleDeleteProject(project.id, e)}
-                      className="p-1.5 rounded-full text-light-textSecondary dark:text-dark-textSecondary hover:text-light-text dark:hover:text-dark-text opacity-0 group-hover:opacity-100 transition-opacity"
-                      title="Delete project"
-                    >
-                      <Trash2 className="w-4 h-4" />
-                    </button>
-                  </div>
-
-                  <h3 className="text-lg font-bold text-light-text dark:text-dark-text mb-1 group-hover:underline">
-                    {project.title}
-                  </h3>
-
-                  {project.description && (
-                    <p className="text-xs text-light-textSecondary dark:text-dark-textSecondary line-clamp-2 mb-4">
-                      {project.description}
-                    </p>
-                  )}
-                </div>
-
-                <div className="mt-4 pt-4 border-t border-light-border dark:border-dark-border">
-                  <div className="flex items-center justify-between text-xs font-medium text-light-textSecondary dark:text-dark-textSecondary mb-2">
-                    <span>{project.completed_tasks} of {project.total_tasks} tasks done</span>
-                    <span className="font-bold text-light-text dark:text-dark-text tabular-nums">{percent}%</span>
-                  </div>
-
-                  <div className="w-full h-2 rounded-full bg-light-fill dark:bg-dark-fill overflow-hidden mb-4">
-                    <div
-                      className="h-full bg-light-text dark:bg-dark-text rounded-full transition-all duration-500"
-                      style={{ width: `${percent}%` }}
-                    />
-                  </div>
-
-                  <div className="flex items-center justify-between text-[11px] font-bold uppercase tracking-wider text-light-textSecondary dark:text-dark-textSecondary">
-                    <span className="flex items-center gap-1.5 text-light-text dark:text-dark-text">
-                      <Flame className="w-3.5 h-3.5" />
-                      <span>{project.total_focus_minutes}m Focus</span>
-                    </span>
-
-                    <span className="flex items-center gap-1 group-hover:translate-x-1 transition-transform">
-                      <span>View Backlog</span>
-                      <ArrowRight className="w-3 h-3" />
-                    </span>
-                  </div>
-                </div>
-              </div>
-            );
-          })}
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+          {activeProjects.map((project) => (
+            <ProjectCard
+              key={project.id}
+              project={project}
+              tasks={tasks}
+              onClick={() => {
+                setAnalyticsProjectId(project.id);
+                setActiveTab('analytics');
+              }}
+              onEdit={(proj, e) => {
+                e.stopPropagation();
+                setEditingProject(proj);
+              }}
+              onDelete={handleDeleteProject}
+              onViewBacklog={(pId, e) => {
+                e.stopPropagation();
+                setTaskProjectFilter(pId);
+                setActiveTab('tasks');
+              }}
+            />
+          ))}
         </div>
       )}
+
+      {/* 4. Create Project Modal */}
+      <CreateProjectModal
+        isOpen={isModalOpen}
+        onClose={() => setIsModalOpen(false)}
+        onSubmit={handleCreateProject}
+      />
+
+      {/* 5. Edit Project Modal */}
+      <EditProjectModal
+        project={editingProject}
+        isOpen={Boolean(editingProject)}
+        onClose={() => setEditingProject(null)}
+        onRefresh={onRefresh}
+      />
     </div>
   );
 };

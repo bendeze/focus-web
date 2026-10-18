@@ -1,5 +1,8 @@
 @import "tailwindcss";
 
+@custom-variant dark (&:where(.dark, .dark *));
+@custom-variant light (&:where(.light, .light *));
+
 @theme {
   --color-secondary: #1D1D20;
   --color-chart-1: #10B981;
@@ -73,6 +76,22 @@
 }
 @utility border-subtle-light {
   border-color: #E4E4E7;
+}
+
+/* Minimalist toast entrance animation */
+@keyframes toast-enter {
+  0% {
+    opacity: 0;
+    transform: translateY(8px) scale(0.97);
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+@utility animate-toast-in {
+  animation: toast-enter 0.22s cubic-bezier(0.16, 1, 0.3, 1) forwards;
 }
 
 /* Minimalist sleek scrollbar */

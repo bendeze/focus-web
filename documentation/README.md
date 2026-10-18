@@ -37,22 +37,31 @@ Focus is a full-stack personal productivity and time-management system designed 
 
 ### High-Level System Architecture
 
-```mermaid
-graph TD
-    subgraph Client["Client Layer"]
-        A["React 19 + TypeScript + Vite + Tailwind CSS v4 + Zustand<br/>- Web Application (Single-Page App)<br/>- Offline-Ready State with Delta Synchronization"]
-    end
-
-    subgraph Gateway["API Gateway Layer"]
-        B["FastAPI Application (Python 3.14)<br/>- CORS & Security Headers<br/>- Dependency Injection (Auth, Database Sessions)<br/>- Idempotency & Validation Layer (Pydantic v2)"]
-    end
-
-    subgraph Persistence["Persistence Layer"]
-        C["SQLite (Local Development)<br/>PostgreSQL via psycopg3 (Cloud & Production)"]
-    end
-
-    Client -->|"HTTPS / JSON (REST API)"| Gateway
-    Gateway -->|"SQLModel / SQLAlchemy ORM"| Persistence
+```
++-------------------------------------------------------------+
+|                      Client Layer                           |
+|  React 19 + TypeScript + Vite + Tailwind CSS v4 + Zustand   |
+|  - Web Application (Single-Page App)                        |
+|  - Offline-Ready State with Delta Synchronization           |
++-------------------------------------------------------------+
+                              |
+                              | HTTPS / JSON (REST API)
+                              v
++-------------------------------------------------------------+
+|                      API Gateway                            |
+|             FastAPI Application (Python 3.14)               |
+|  - CORS & Security Headers                                  |
+|  - Dependency Injection (Auth, Database Sessions)           |
+|  - Idempotency & Validation Layer (Pydantic v2)             |
++-------------------------------------------------------------+
+                              |
+                              | SQLModel / SQLAlchemy ORM
+                              v
++-------------------------------------------------------------+
+|                     Persistence Layer                       |
+|  - SQLite (Local Development)                               |
+|  - PostgreSQL via psycopg3 (Cloud & Production Deployment)  |
++-------------------------------------------------------------+
 ```
 
 ### Core System Principles

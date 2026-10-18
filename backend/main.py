@@ -23,10 +23,11 @@ app = FastAPI(
     redoc_url="/redoc",
 )
 
-# Enable CORS for mobile apps and dev tools
+# Enable CORS for web, mobile apps and dev tools
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=settings.BACKEND_CORS_ORIGINS,
+    allow_origin_regex=r"^https?://(localhost|127\.0\.0\.1)(:\d+)?$",
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],

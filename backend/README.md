@@ -4,7 +4,7 @@ A high-performance, secure, and modular REST API powering the **Focus & Producti
 
 ---
 
-## 🏛️ Architecture & Design Patterns
+## Architecture & Design Patterns
 
 The backend follows a clean, layered architecture emphasizing **separation of concerns**, **strict tenant isolation**, and **high-throughput batch processing**:
 
@@ -58,7 +58,7 @@ backend/
 
 ---
 
-## 🔒 Security Specifications
+## Security Specifications
 
 | Feature | Implementation | Description |
 |---|---|---|
@@ -70,7 +70,7 @@ backend/
 
 ---
 
-## 🚀 Getting Started
+## Getting Started
 
 ### Prerequisites
 
@@ -114,7 +114,7 @@ The server will start at `http://127.0.0.1:8000` with hot-reload enabled.
 
 ---
 
-## 📖 API Documentation
+## API Documentation
 
 FastAPI automatically generates interactive, OpenAPI-compliant documentation:
 
@@ -124,7 +124,7 @@ FastAPI automatically generates interactive, OpenAPI-compliant documentation:
 
 ---
 
-## 🧪 Running the Test Suite
+## Running the Test Suite
 
 The test suite runs against an isolated in-memory SQLite database via pytest:
 
@@ -134,6 +134,6 @@ uv run pytest
 
 ---
 
-## 📜 License
+## License
 
 MIT License. Open source and community-friendly.

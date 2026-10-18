@@ -47,6 +47,16 @@ class FocusCompleteRequest(SQLModel):
         return self
 
 
+class FocusPauseRequest(SQLModel):
+    actual_focus_seconds: Optional[int] = None
+
+    @model_validator(mode="after")
+    def validate_pause(self) -> "FocusPauseRequest":
+        if self.actual_focus_seconds is not None and self.actual_focus_seconds < 0:
+            raise ValueError("Actual focus seconds cannot be negative")
+        return self
+
+
 class FocusSessionResponse(SQLModel):
     id: uuid.UUID
     user_id: uuid.UUID

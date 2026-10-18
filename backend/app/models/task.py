@@ -13,7 +13,7 @@ class Task(SQLModel, table=True):
     project_id: Optional[uuid.UUID] = Field(default=None, foreign_key="projects.id", index=True, nullable=True)
     title: str = Field(index=True, nullable=False)
     description: Optional[str] = Field(default=None, nullable=True)
-    status: str = Field(default="todo", index=True, nullable=False)  # todo, in_progress, completed, cancelled
+    status: str = Field(default="todo", index=True, nullable=False)  # todo, in_progress, paused, completed, cancelled
     priority: str = Field(default="medium", index=True, nullable=False)  # low, medium, high, urgent
     estimated_minutes: int = Field(default=25, nullable=False)
     order_index: int = Field(default=0, nullable=False)
@@ -28,6 +28,7 @@ class TaskCreate(SQLModel):
     title: str = Field(min_length=1, max_length=255, description="Actionable task title")
     description: Optional[str] = None
     project_id: Optional[uuid.UUID] = None
+    status: Optional[str] = "todo"
     priority: Optional[str] = "medium"
     estimated_minutes: Optional[int] = 25
     order_index: Optional[int] = 0
@@ -37,6 +38,9 @@ class TaskCreate(SQLModel):
         self.title = self.title.strip()
         if not self.title:
             raise ValueError("Task title cannot be empty")
+        valid_statuses = {"todo", "in_progress", "paused", "completed", "cancelled"}
+        if self.status and self.status not in valid_statuses:
+            raise ValueError(f"Status must be one of {valid_statuses}")
         valid_priorities = {"low", "medium", "high", "urgent"}
         if self.priority and self.priority not in valid_priorities:
             raise ValueError(f"Priority must be one of {valid_priorities}")
@@ -61,7 +65,7 @@ class TaskUpdate(SQLModel):
             if not self.title:
                 raise ValueError("Task title cannot be empty")
         if self.status is not None:
-            valid_statuses = {"todo", "in_progress", "completed", "cancelled"}
+            valid_statuses = {"todo", "in_progress", "paused", "completed", "cancelled"}
             if self.status not in valid_statuses:
                 raise ValueError(f"Status must be one of {valid_statuses}")
         if self.priority is not None:
@@ -100,3 +104,7 @@ class TaskReorderItem(SQLModel):
 
 class TaskReorderRequest(SQLModel):
     items: list[TaskReorderItem]
+
+
+class TaskPauseRequest(SQLModel):
+    actual_focus_seconds: Optional[int] = None

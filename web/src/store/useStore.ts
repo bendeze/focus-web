@@ -14,11 +14,18 @@ interface AppState {
   activeTab: 'dashboard' | 'focus' | 'tasks' | 'projects' | 'analytics' | 'settings';
   setActiveTab: (tab: 'dashboard' | 'focus' | 'tasks' | 'projects' | 'analytics' | 'settings') => void;
 
+  taskProjectFilter: string;
+  setTaskProjectFilter: (filter: string) => void;
+
+  analyticsProjectId: string | null;
+  setAnalyticsProjectId: (projectId: string | null) => void;
+
   activeSession: FocusSession | null;
   remainingSeconds: number;
   totalSeconds: number;
   isTimerRunning: boolean;
   selectedTaskId: string | null;
+  taskTimers: Record<string, { remainingSeconds: number; totalSeconds: number }>;
   
   setActiveSession: (session: FocusSession | null) => void;
   setRemainingSeconds: (seconds: number) => void;
@@ -26,6 +33,12 @@ interface AppState {
   setIsTimerRunning: (isRunning: boolean) => void;
   setSelectedTaskId: (taskId: string | null) => void;
   decrementTimer: () => void;
+  selectAndStartTask: (taskId: string, estimatedMinutes?: number) => void;
+  pauseCurrentTimer: () => void;
+  resumeCurrentTimer: () => void;
+  toggleTimer: () => void;
+  resetCurrentTimer: (defaultMinutes?: number) => void;
+  clearTaskTimer: (taskId: string) => void;
 
   isZenMode: boolean;
   setZenMode: (zen: boolean) => void;
@@ -71,7 +84,7 @@ export const useStore = create<AppState>((set, get) => ({
   logout: () => {
     localStorage.removeItem('focus_token');
     localStorage.removeItem('focus_user');
-    set({ user: null, token: null, activeSession: null, isTimerRunning: false });
+    set({ user: null, token: null, activeSession: null, isTimerRunning: false, taskTimers: {} });
     get().addToast('Logged out successfully', 'info');
   },
 
@@ -92,52 +105,138 @@ export const useStore = create<AppState>((set, get) => ({
   activeTab: 'dashboard',
   setActiveTab: (activeTab) => set({ activeTab }),
 
+  taskProjectFilter: 'all',
+  setTaskProjectFilter: (taskProjectFilter) => set({ taskProjectFilter }),
+
+  analyticsProjectId: null,
+  setAnalyticsProjectId: (analyticsProjectId) => set({ analyticsProjectId }),
+
   activeSession: null,
   remainingSeconds: 25 * 60,
   totalSeconds: 25 * 60,
   isTimerRunning: false,
   selectedTaskId: null,
+  taskTimers: {},
 
   setActiveSession: (activeSession) => {
-    if (activeSession) {
-      const isRunning = activeSession.status === 'active';
-      const durationSecs = activeSession.duration_minutes * 60;
-      
-      const startTime = new Date(activeSession.started_at).getTime();
-      const now = Date.now();
-      const elapsedSecs = activeSession.status === 'paused'
-        ? (activeSession.actual_focus_seconds || 0)
-        : Math.floor((now - startTime) / 1000);
-
-      const remain = Math.max(0, durationSecs - elapsedSecs);
-
-      set({
-        activeSession,
-        selectedTaskId: activeSession.task_id,
-        totalSeconds: durationSecs,
-        remainingSeconds: remain,
-        isTimerRunning: isRunning && remain > 0,
-      });
-    } else {
-      set({
-        activeSession: null,
-        isTimerRunning: false,
-        remainingSeconds: 25 * 60,
-        totalSeconds: 25 * 60,
-      });
-    }
+    set({ activeSession });
   },
 
-  setRemainingSeconds: (remainingSeconds) => set({ remainingSeconds }),
-  setTotalSeconds: (totalSeconds) => set({ totalSeconds }),
+  setRemainingSeconds: (remainingSeconds) => {
+    const { selectedTaskId, taskTimers, totalSeconds } = get();
+    const updatedTimers = selectedTaskId ? {
+      ...taskTimers,
+      [selectedTaskId]: { remainingSeconds, totalSeconds },
+    } : taskTimers;
+    set({ remainingSeconds, taskTimers: updatedTimers });
+  },
+
+  setTotalSeconds: (totalSeconds) => {
+    const { selectedTaskId, taskTimers, remainingSeconds } = get();
+    const updatedTimers = selectedTaskId ? {
+      ...taskTimers,
+      [selectedTaskId]: { remainingSeconds, totalSeconds },
+    } : taskTimers;
+    set({ totalSeconds, taskTimers: updatedTimers });
+  },
+
   setIsTimerRunning: (isTimerRunning) => set({ isTimerRunning }),
   setSelectedTaskId: (selectedTaskId) => set({ selectedTaskId }),
 
   decrementTimer: () => {
-    const { remainingSeconds, isTimerRunning } = get();
+    const { remainingSeconds, isTimerRunning, selectedTaskId, taskTimers, totalSeconds } = get();
     if (isTimerRunning && remainingSeconds > 0) {
-      set({ remainingSeconds: remainingSeconds - 1 });
+      const nextRemain = remainingSeconds - 1;
+      const nextTimers = selectedTaskId ? {
+        ...taskTimers,
+        [selectedTaskId]: {
+          remainingSeconds: nextRemain,
+          totalSeconds,
+        },
+      } : taskTimers;
+      set({ remainingSeconds: nextRemain, taskTimers: nextTimers });
     }
+  },
+
+  selectAndStartTask: (taskId: string, estimatedMinutes?: number) => {
+    const { selectedTaskId, remainingSeconds, totalSeconds, taskTimers } = get();
+    const updatedTimers = { ...taskTimers };
+
+    // Save previous task's current progress if it was running or paused
+    if (selectedTaskId && selectedTaskId !== taskId) {
+      updatedTimers[selectedTaskId] = {
+        remainingSeconds,
+        totalSeconds,
+      };
+    }
+
+    // Retrieve or initialize timer for clicked task
+    const existing = updatedTimers[taskId];
+    const durSecs = existing ? existing.totalSeconds : (estimatedMinutes || 25) * 60;
+    const remainSecs = existing ? existing.remainingSeconds : durSecs;
+
+    updatedTimers[taskId] = {
+      remainingSeconds: remainSecs,
+      totalSeconds: durSecs,
+    };
+
+    set({
+      selectedTaskId: taskId,
+      remainingSeconds: remainSecs,
+      totalSeconds: durSecs,
+      isTimerRunning: true,
+      taskTimers: updatedTimers,
+    });
+  },
+
+  pauseCurrentTimer: () => {
+    const { selectedTaskId, remainingSeconds, totalSeconds, taskTimers } = get();
+    const updatedTimers = selectedTaskId ? {
+      ...taskTimers,
+      [selectedTaskId]: { remainingSeconds, totalSeconds },
+    } : taskTimers;
+    set({
+      isTimerRunning: false,
+      taskTimers: updatedTimers,
+    });
+  },
+
+  resumeCurrentTimer: () => {
+    set({ isTimerRunning: true });
+  },
+
+  toggleTimer: () => {
+    const { isTimerRunning } = get();
+    if (isTimerRunning) {
+      get().pauseCurrentTimer();
+    } else {
+      get().resumeCurrentTimer();
+    }
+  },
+
+  resetCurrentTimer: (defaultMinutes?: number) => {
+    const { selectedTaskId, taskTimers } = get();
+    const durSecs = (defaultMinutes || 25) * 60;
+    const updatedTimers = selectedTaskId ? {
+      ...taskTimers,
+      [selectedTaskId]: { remainingSeconds: durSecs, totalSeconds: durSecs },
+    } : taskTimers;
+    set({
+      isTimerRunning: false,
+      remainingSeconds: durSecs,
+      totalSeconds: durSecs,
+      taskTimers: updatedTimers,
+    });
+  },
+
+  clearTaskTimer: (taskId: string) => {
+    const { taskTimers, selectedTaskId } = get();
+    const updatedTimers = { ...taskTimers };
+    delete updatedTimers[taskId];
+    set({
+      taskTimers: updatedTimers,
+      ...(selectedTaskId === taskId ? { isTimerRunning: false, remainingSeconds: 25 * 60, totalSeconds: 25 * 60 } : {}),
+    });
   },
 
   isZenMode: false,

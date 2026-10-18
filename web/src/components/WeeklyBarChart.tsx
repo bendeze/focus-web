@@ -20,7 +20,7 @@ export interface WeeklyBarChartDatum {
   isToday: boolean;
 }
 
-export const formatFocusDuration = (seconds: number): string => {
+const formatFocusDuration = (seconds: number): string => {
   if (seconds <= 0) return '0m';
   const totalMinutes = Math.round(seconds / 60);
   if (totalMinutes < 1) return '< 1m';

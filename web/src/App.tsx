@@ -13,8 +13,12 @@ import { ProjectsView } from './components/ProjectsView';
 import { AnalyticsView } from './components/AnalyticsView';
 
 import { RegisterJourney } from './components/RegisterJourney';
+import { SettingsSidebar } from './components/SettingsSidebar';
+import { useKeyboardShortcuts } from './hooks/useKeyboardShortcuts';
 
 export const App: React.FC = () => {
+  useKeyboardShortcuts();
+
   const {
     user,
     token,
@@ -30,6 +34,7 @@ export const App: React.FC = () => {
   const [isAuthOpen, setIsAuthOpen] = useState(false);
   const [isRegisterOpen, setIsRegisterOpen] = useState(false);
   const [isProfileOpen, setIsProfileOpen] = useState(false);
+  const [isSettingsOpen, setIsSettingsOpen] = useState(false);
 
   const lastSyncTimeRef = useRef<string>('');
 
@@ -45,9 +50,7 @@ export const App: React.FC = () => {
       setTasks(tList);
       setProjects(pList);
       setStats(fStats);
-      if (currentSession) {
-        setActiveSession(currentSession);
-      }
+      setActiveSession(currentSession || null);
       lastSyncTimeRef.current = new Date().toISOString();
     } catch {
       // ignore
@@ -110,7 +113,7 @@ export const App: React.FC = () => {
   }, [user]);
 
   return (
-    <div className="min-h-screen bg-white dark:bg-black light:bg-canvas-light text-white dark:text-white light:text-black transition-colors flex flex-col font-sans">
+    <div className="min-h-screen bg-white dark:bg-black light:bg-canvas text-white dark:text-white light:text-black transition-colors flex flex-col font-sans">
       <ToastContainer />
       <AuthModal
         isOpen={isAuthOpen}
@@ -123,12 +126,30 @@ export const App: React.FC = () => {
         onSwitchToLogin={() => setIsAuthOpen(true)}
       />
       <ProfileModal isOpen={isProfileOpen} onClose={() => setIsProfileOpen(false)} />
+      <SettingsSidebar
+        isOpen={isSettingsOpen}
+        onClose={() => setIsSettingsOpen(false)}
+        onOpenProfile={() => {
+          setIsSettingsOpen(false);
+          setIsProfileOpen(true);
+        }}
+        onOpenAuth={() => {
+          setIsSettingsOpen(false);
+          setIsAuthOpen(true);
+        }}
+        onOpenRegister={() => {
+          setIsSettingsOpen(false);
+          setIsRegisterOpen(true);
+        }}
+      />
 
       {!isZenMode && !isRegisterOpen && (
         <Navbar
           projects={projects}
           onOpenAuth={() => setIsAuthOpen(true)}
           onOpenProfile={() => setIsProfileOpen(true)}
+          isSettingsOpen={isSettingsOpen}
+          onToggleSettings={() => setIsSettingsOpen((prev) => !prev)}
         />
       )}
 
@@ -165,6 +186,7 @@ export const App: React.FC = () => {
         {activeTab === 'projects' && (
           <ProjectsView
             projects={projects}
+            tasks={tasks}
             onRefresh={refreshAllData}
             onOpenAuth={() => setIsAuthOpen(true)}
           />
@@ -174,6 +196,9 @@ export const App: React.FC = () => {
           <AnalyticsView
             stats={stats}
             tasks={tasks}
+            projects={projects}
+            onRefresh={refreshAllData}
+            onOpenAuth={() => setIsAuthOpen(true)}
           />
         )}
       </main>

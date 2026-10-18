@@ -39,7 +39,7 @@ export interface Task {
   project_id: string | null;
   title: string;
   description: string | null;
-  status: 'todo' | 'in_progress' | 'completed' | 'cancelled';
+  status: 'todo' | 'in_progress' | 'paused' | 'completed' | 'cancelled';
   priority: 'low' | 'medium' | 'high' | 'urgent';
   estimated_minutes: number;
   order_index: number;

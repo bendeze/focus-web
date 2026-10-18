@@ -35,6 +35,11 @@ export const FocusTimer: React.FC<FocusTimerProps> = ({ tasks, onSessionFinished
     setTotalSeconds,
     setIsTimerRunning,
     decrementTimer,
+    selectAndStartTask,
+    pauseCurrentTimer,
+    resumeCurrentTimer,
+    clearTaskTimer,
+    resetCurrentTimer,
     isZenMode,
     setZenMode,
     addToast,
@@ -98,7 +103,9 @@ export const FocusTimer: React.FC<FocusTimerProps> = ({ tasks, onSessionFinished
       return;
     }
 
-    setLoading(true);
+    selectAndStartTask(selectedTaskId, selectedDuration);
+
+    // Optionally start backend session in background for stats
     try {
       const session = await api.startFocusSession({
         task_id: selectedTaskId,
@@ -106,64 +113,58 @@ export const FocusTimer: React.FC<FocusTimerProps> = ({ tasks, onSessionFinished
         auto_complete_task: autoCompleteTask,
       });
       setActiveSession(session);
-      setTotalSeconds(selectedDuration * 60);
-      setRemainingSeconds(selectedDuration * 60);
-      setIsTimerRunning(true);
-      addToast(`Focus session started (${selectedDuration}m)`, 'success');
-    } catch (err: any) {
-      addToast(err.message || 'Could not start focus session', 'error');
-    } finally {
-      setLoading(false);
+      onSessionFinished?.();
+    } catch {
+      // quiet fail, client timer continues uninterrupted
     }
   };
 
   const handlePause = async () => {
-    if (!activeSession) return;
-    setLoading(true);
-    try {
-      const updated = await api.pauseFocusSession(activeSession.id);
-      setActiveSession(updated);
-      setIsTimerRunning(false);
-      addToast('Focus session paused', 'info');
-    } catch (err: any) {
-      addToast(err.message || 'Failed to pause session', 'error');
-    } finally {
-      setLoading(false);
+    pauseCurrentTimer();
+
+    if (activeSession) {
+      try {
+        const elapsed = Math.max(0, totalSeconds - remainingSeconds);
+        const updated = await api.pauseFocusSession(activeSession.id, { actual_focus_seconds: elapsed });
+        setActiveSession(updated);
+        onSessionFinished?.();
+      } catch {
+        // quiet fail
+      }
     }
   };
 
   const handleResume = async () => {
-    if (!activeSession) return;
-    setLoading(true);
-    try {
-      const updated = await api.resumeFocusSession(activeSession.id);
-      setActiveSession(updated);
-      setIsTimerRunning(true);
-      addToast('Focus session resumed', 'success');
-    } catch (err: any) {
-      addToast(err.message || 'Failed to resume session', 'error');
-    } finally {
-      setLoading(false);
+    resumeCurrentTimer();
+
+    if (activeSession) {
+      try {
+        const updated = await api.resumeFocusSession(activeSession.id);
+        setActiveSession(updated);
+        onSessionFinished?.();
+      } catch {
+        // quiet fail
+      }
     }
   };
 
   const handleComplete = async () => {
-    if (!activeSession) return;
     setLoading(true);
     try {
-      const elapsed = Math.max(0, totalSeconds - remainingSeconds);
-      const completed = await api.completeFocusSession(activeSession.id, {
-        actual_focus_seconds: elapsed,
-        notes: sessionNotes || undefined,
-      });
+      if (selectedTaskId) {
+        await api.updateTask(selectedTaskId, { status: 'completed' });
+        clearTaskTimer(selectedTaskId);
+      }
+      if (activeSession) {
+        const elapsed = Math.max(0, totalSeconds - remainingSeconds);
+        await api.completeFocusSession(activeSession.id, {
+          actual_focus_seconds: elapsed,
+          notes: sessionNotes || undefined,
+        });
+        setActiveSession(null);
+      }
       triggerConfetti();
-      setActiveSession(null);
-      addToast(
-        completed.auto_complete_task
-          ? 'Session completed and task marked as done!'
-          : 'Session completed successfully!',
-        'success'
-      );
+      addToast('Session completed and task marked as done!', 'success');
       onSessionFinished?.();
     } catch (err: any) {
       addToast(err.message || 'Failed to complete session', 'error');
@@ -173,26 +174,25 @@ export const FocusTimer: React.FC<FocusTimerProps> = ({ tasks, onSessionFinished
   };
 
   const handleCancel = async () => {
-    if (!activeSession) {
-      setRemainingSeconds(selectedDuration * 60);
-      setIsTimerRunning(false);
-      return;
-    }
-
     if (!window.confirm('Are you sure you want to cancel this focus sprint?')) return;
 
-    setLoading(true);
-    try {
-      await api.cancelFocusSession(activeSession.id);
-      setActiveSession(null);
-      setRemainingSeconds(selectedDuration * 60);
+    if (selectedTaskId) {
+      resetCurrentTimer(selectedDuration);
+    } else {
       setIsTimerRunning(false);
-      addToast('Session cancelled', 'info');
-    } catch (err: any) {
-      addToast(err.message || 'Failed to cancel session', 'error');
-    } finally {
-      setLoading(false);
+      setRemainingSeconds(selectedDuration * 60);
     }
+
+    if (activeSession) {
+      try {
+        await api.cancelFocusSession(activeSession.id);
+        setActiveSession(null);
+      } catch {
+        // quiet fail
+      }
+    }
+    addToast('Session cancelled', 'info');
+    onSessionFinished?.();
   };
 
   const formatTime = (secs: number) => {

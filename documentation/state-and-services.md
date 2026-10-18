@@ -52,20 +52,26 @@ The application uses **Zustand** as its primary client-side state store. State i
 
 To ensure data freshness across multiple devices and browser tabs without full refetches, `App.tsx` runs an automated background delta synchronization loop:
 
-```
-[Client App]                                                 [Backend API]
-     |                                                             |
-     |--- Every 10 seconds ----------------------------------------|
-     |                                                             |
-     |--- GET /api/v1/tasks?updated_after=2026-10-18T19:00:00Z --->|
-     |<-- Delta tasks array (only modified or created records) ----|
-     |                                                             |
-     |--- GET /api/v1/projects?updated_after=2026-10-18T19:00:00Z ->|
-     |<-- Delta projects array (only modified or created records) -|
-     |                                                             |
-[Reconcile Map]                                                    |
-     | Merge into local array preserving client order              |
-     | Update lastSyncTimeRef = new Date().toISOString()           |
+```mermaid
+sequenceDiagram
+    autonumber
+    participant C as Client (App.tsx)
+    participant API as FastAPI Backend (/api/v1)
+    participant DB as Persistence Layer (SQLModel)
+
+    Note over C,API: Background Interval (Every 10 Seconds)
+
+    C->>+API: GET /tasks?updated_after={lastSyncTime}
+    API->>+DB: SELECT * FROM tasks WHERE updated_at > lastSync AND user_id = current_user
+    DB-->>-API: Filtered task delta records
+    API-->>-C: Delta tasks array (modified, created, deleted)
+
+    C->>+API: GET /projects?updated_after={lastSyncTime}
+    API->>+DB: SELECT * FROM projects WHERE updated_at > lastSync AND user_id = current_user
+    DB-->>-API: Filtered project delta records
+    API-->>-C: Delta projects array (modified, created, deleted)
+
+    Note over C: Reconcile Map:<br/>Merge into local array preserving client order<br/>Update lastSyncTimeRef = new Date().toISOString()
 ```
 
 ### Reconciliation Mechanism

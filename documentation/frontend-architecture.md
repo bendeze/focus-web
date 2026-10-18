@@ -103,43 +103,68 @@ web/
 
 ## Component Hierarchy and Tree Structure
 
-```
-App
-├── ToastContainer (fixed bottom-right notifications)
-├── AuthModal (conditional modal)
-├── RegisterJourney (conditional conversational overlay)
-├── ProfileModal (conditional modal)
-├── SettingsSidebar (sliding right drawer)
-├── Navbar (hidden in Zen Mode or during Registration)
-└── Main Content Container
-    ├── [activeTab === 'dashboard'] -> DashboardView
-    │   ├── DashboardHeader
-    │   ├── PomodoroTimerWidget (circular ring, timer controls)
-    │   ├── DashboardNextUp (task row actions)
-    │   ├── DashboardMetrics
-    │   ├── WeeklyFocusWidget (WeeklyBarChart)
-    │   ├── ActivityHeatmapSection (heatmap grid)
-    │   └── DashboardFooter
-    ├── [activeTab === 'focus'] -> FocusTimer
-    │   └── Dedicated full-screen timer and notes drawer
-    ├── [activeTab === 'tasks'] -> TasksView
-    │   ├── TaskHeader
-    │   ├── TaskMetrics
-    │   ├── TaskCreateCard
-    │   ├── WorkspaceTasksTable (sorting, filters, pagination)
-    │   └── TaskDetailSidebar (drawer for selected task inspection)
-    ├── [activeTab === 'projects'] -> ProjectsView
-    │   ├── ProjectMetrics
-    │   ├── ProjectCard list
-    │   ├── CreateProjectModal
-    │   └── EditProjectModal
-    └── [activeTab === 'analytics'] -> AnalyticsView
-        ├── AnalyticsHeader
-        ├── AnalyticsKpiCards
-        ├── DailySprintWidget
-        ├── MilestoneProgressWidget
-        ├── ActivityHeatmapWidget
-        └── ProjectTasksTable
+```mermaid
+graph TD
+    App["App Root (App.tsx)"]
+
+    subgraph Overlays["Global Overlays & Navigation"]
+        TC["ToastContainer (fixed bottom-right notifications)"]
+        AM["AuthModal (conditional modal)"]
+        RJ["RegisterJourney (conversational registration)"]
+        PM["ProfileModal (conditional modal)"]
+        SS["SettingsSidebar (sliding drawer)"]
+        NB["Navbar (hidden in Zen Mode / Registration)"]
+    end
+
+    subgraph Views["Main Content Views (activeTab)"]
+        DV["DashboardView"]
+        FT["FocusTimer (dedicated full-screen timer)"]
+        TV["TasksView"]
+        PV["ProjectsView"]
+        AV["AnalyticsView"]
+    end
+
+    subgraph DashboardComponents["Dashboard Components"]
+        DH["DashboardHeader"]
+        PTW["PomodoroTimerWidget (circular ring, timer controls)"]
+        DNU["DashboardNextUp (task row actions)"]
+        DM["DashboardMetrics"]
+        WFW["WeeklyFocusWidget (WeeklyBarChart)"]
+        AHS["ActivityHeatmapSection (heatmap grid)"]
+        DF["DashboardFooter"]
+    end
+
+    subgraph TasksComponents["Tasks Components"]
+        TH["TaskHeader"]
+        TM["TaskMetrics"]
+        TCC["TaskCreateCard"]
+        WTT["WorkspaceTasksTable (sorting, filters, pagination)"]
+        TDS["TaskDetailSidebar (inspector drawer)"]
+    end
+
+    subgraph ProjectsComponents["Projects Components"]
+        PRM["ProjectMetrics"]
+        PCL["ProjectCard List"]
+        CPM["CreateProjectModal"]
+        EPM["EditProjectModal"]
+    end
+
+    subgraph AnalyticsComponents["Analytics Components"]
+        AH["AnalyticsHeader"]
+        AKC["AnalyticsKpiCards"]
+        DSW["DailySprintWidget"]
+        MPW["MilestoneProgressWidget"]
+        AHW["ActivityHeatmapWidget"]
+        PTT["ProjectTasksTable"]
+    end
+
+    App --> Overlays
+    App --> Views
+
+    DV --> DashboardComponents
+    TV --> TasksComponents
+    PV --> ProjectsComponents
+    AV --> AnalyticsComponents
 ```
 
 ---

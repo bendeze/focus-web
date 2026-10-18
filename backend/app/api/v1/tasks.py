@@ -11,6 +11,7 @@ from app.models.project import Project
 from app.models.task import (
     Task,
     TaskCreate,
+    TaskPauseRequest,
     TaskReorderRequest,
     TaskResponse,
     TaskUpdate,
@@ -20,36 +21,58 @@ from app.models.focus import FocusSession
 router = APIRouter(prefix="/tasks", tags=["Tasks"])
 
 
-def _calculate_task_stats(db: Session, task: Task) -> TaskResponse:
+from collections import defaultdict
+
+
+def _batch_calculate_task_stats(db: Session, tasks: list[Task]) -> list[TaskResponse]:
+    if not tasks:
+        return []
+
+    task_ids = [t.id for t in tasks]
     sessions = db.exec(
         select(FocusSession).where(
-            FocusSession.task_id == task.id,
+            FocusSession.task_id.in_(task_ids),  # type: ignore
             FocusSession.is_deleted == False,
             FocusSession.status == "completed"
         )
     ).all()
-    session_count = len(sessions)
-    total_seconds = sum(s.actual_focus_seconds or (s.duration_minutes * 60) for s in sessions)
-    total_focus_minutes = total_seconds // 60
 
-    return TaskResponse(
-        id=task.id,
-        user_id=task.user_id,
-        project_id=task.project_id,
-        title=task.title,
-        description=task.description,
-        status=task.status,
-        priority=task.priority,
-        estimated_minutes=task.estimated_minutes,
-        order_index=task.order_index,
-        completed_at=task.completed_at,
-        is_deleted=task.is_deleted,
-        deleted_at=task.deleted_at,
-        created_at=task.created_at,
-        updated_at=task.updated_at,
-        total_focus_minutes=total_focus_minutes,
-        focus_session_count=session_count,
-    )
+    sessions_by_task: dict[uuid.UUID, list[FocusSession]] = defaultdict(list)
+    for s in sessions:
+        sessions_by_task[s.task_id].append(s)
+
+    responses: list[TaskResponse] = []
+    for task in tasks:
+        task_sessions = sessions_by_task.get(task.id, [])
+        session_count = len(task_sessions)
+        total_seconds = sum(s.actual_focus_seconds or (s.duration_minutes * 60) for s in task_sessions)
+        total_focus_minutes = total_seconds // 60
+
+        responses.append(
+            TaskResponse(
+                id=task.id,
+                user_id=task.user_id,
+                project_id=task.project_id,
+                title=task.title,
+                description=task.description,
+                status=task.status,
+                priority=task.priority,
+                estimated_minutes=task.estimated_minutes,
+                order_index=task.order_index,
+                completed_at=task.completed_at,
+                is_deleted=task.is_deleted,
+                deleted_at=task.deleted_at,
+                created_at=task.created_at,
+                updated_at=task.updated_at,
+                total_focus_minutes=total_focus_minutes,
+                focus_session_count=session_count,
+            )
+        )
+    return responses
+
+
+def _calculate_task_stats(db: Session, task: Task) -> TaskResponse:
+    return _batch_calculate_task_stats(db, [task])[0]
 
 
 @router.post(
@@ -129,10 +152,12 @@ def list_tasks(
     db: Annotated[Session, Depends(get_db)],
     project_id: Optional[uuid.UUID] = Query(None, description="Filter by project ID"),
     standalone: Optional[bool] = Query(None, description="Filter only standalone tasks without project"),
-    status: Optional[str] = Query(None, description="Filter by status: todo, in_progress, completed, cancelled"),
+    status: Optional[str] = Query(None, description="Filter by status: todo, in_progress, paused, completed, cancelled"),
     priority: Optional[str] = Query(None, description="Filter by priority: low, medium, high, urgent"),
     updated_after: Optional[datetime] = Query(None, description="ISO-8601 timestamp for delta sync"),
     include_deleted: Optional[bool] = Query(None, description="Include soft-deleted items (defaults to True if updated_after is set, False otherwise)"),
+    limit: Optional[int] = Query(None, ge=1, le=100, description="Max number of tasks to return"),
+    offset: Optional[int] = Query(None, ge=0, description="Number of tasks to skip"),
 ) -> list[TaskResponse]:
     query = select(Task).where(Task.user_id == current_user.id)
 
@@ -157,8 +182,13 @@ def list_tasks(
 
     query = query.order_by(Task.order_index.asc(), Task.updated_at.desc()) # type: ignore
 
+    if offset is not None:
+        query = query.offset(offset)
+    if limit is not None:
+        query = query.limit(limit)
+
     tasks = db.exec(query).all()
-    return [_calculate_task_stats(db, t) for t in tasks]
+    return _batch_calculate_task_stats(db, list(tasks))
 
 
 @router.patch(
@@ -182,7 +212,7 @@ def reorder_tasks(
             updated_tasks.append(task)
 
     db.commit()
-    return [_calculate_task_stats(db, t) for t in updated_tasks]
+    return _batch_calculate_task_stats(db, updated_tasks)
 
 
 @router.get(
@@ -250,7 +280,7 @@ def update_task(
             if not task.completed_at:
                 task.completed_at = datetime.now(timezone.utc)
         else:
-            task.status = task_update.status
+            task.status = "todo"
             task.completed_at = None
 
     task.updated_at = datetime.now(timezone.utc)
@@ -258,6 +288,88 @@ def update_task(
     db.commit()
     db.refresh(task)
 
+    return _calculate_task_stats(db, task)
+
+
+@router.post(
+    "/{task_id}/pause",
+    response_model=TaskResponse,
+    summary="Pause a task (Idempotent)"
+)
+def pause_task(
+    task_id: uuid.UUID,
+    current_user: Annotated[User, Depends(get_current_user)],
+    db: Annotated[Session, Depends(get_db)],
+    pause_in: Optional[TaskPauseRequest] = None,
+) -> TaskResponse:
+    task = db.get(Task, task_id)
+    if not task or task.user_id != current_user.id or task.is_deleted:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Task not found"
+        )
+
+    now = datetime.now(timezone.utc)
+
+    # If there is an active focus session for this task, pause it
+    active_session = db.exec(
+        select(FocusSession).where(
+            FocusSession.user_id == current_user.id,
+            FocusSession.task_id == task_id,
+            FocusSession.is_deleted == False,
+            FocusSession.status == "active"
+        )
+    ).first()
+    if active_session:
+        active_session.status = "paused"
+        if pause_in and pause_in.actual_focus_seconds is not None:
+            active_session.actual_focus_seconds = max(0, pause_in.actual_focus_seconds)
+        elif active_session.started_at:
+            elapsed = int((now - active_session.started_at).total_seconds())
+            active_session.actual_focus_seconds = (active_session.actual_focus_seconds or 0) + max(0, elapsed)
+        active_session.updated_at = now
+        db.add(active_session)
+
+    db.commit()
+    db.refresh(task)
+    return _calculate_task_stats(db, task)
+
+
+@router.post(
+    "/{task_id}/resume",
+    response_model=TaskResponse,
+    summary="Resume a paused task (Idempotent)"
+)
+def resume_task(
+    task_id: uuid.UUID,
+    current_user: Annotated[User, Depends(get_current_user)],
+    db: Annotated[Session, Depends(get_db)],
+) -> TaskResponse:
+    task = db.get(Task, task_id)
+    if not task or task.user_id != current_user.id or task.is_deleted:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Task not found"
+        )
+
+    now = datetime.now(timezone.utc)
+
+    paused_session = db.exec(
+        select(FocusSession).where(
+            FocusSession.user_id == current_user.id,
+            FocusSession.task_id == task_id,
+            FocusSession.is_deleted == False,
+            FocusSession.status == "paused"
+        )
+    ).first()
+    if paused_session:
+        paused_session.status = "active"
+        paused_session.started_at = now
+        paused_session.updated_at = now
+        db.add(paused_session)
+
+    db.commit()
+    db.refresh(task)
     return _calculate_task_stats(db, task)
 
 
@@ -270,7 +382,7 @@ def delete_task(
     task_id: uuid.UUID,
     current_user: Annotated[User, Depends(get_current_user)],
     db: Annotated[Session, Depends(get_db)],
-):
+) -> None:
     task = db.get(Task, task_id)
     if not task or task.user_id != current_user.id or task.is_deleted:
         raise HTTPException(

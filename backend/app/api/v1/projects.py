@@ -19,47 +19,75 @@ from app.models.focus import FocusSession
 router = APIRouter(prefix="/projects", tags=["Projects"])
 
 
-def _calculate_project_stats(db: Session, project: Project) -> ProjectResponse:
-    # Query non-deleted tasks count and completed count
+from collections import defaultdict
+
+
+def _batch_calculate_project_stats(db: Session, projects: list[Project]) -> list[ProjectResponse]:
+    if not projects:
+        return []
+
+    project_ids = [p.id for p in projects]
     tasks = db.exec(
         select(Task).where(
-            Task.project_id == project.id,
+            Task.project_id.in_(project_ids),  # type: ignore
             Task.is_deleted == False
         )
     ).all()
-    total_tasks = len(tasks)
-    completed_tasks = sum(1 for t in tasks if t.status == "completed")
 
-    # Query total focus seconds for all non-deleted tasks in this project
-    task_ids = [t.id for t in tasks]
-    total_focus_minutes = 0
-    if task_ids:
+    tasks_by_project: dict[uuid.UUID, list[Task]] = defaultdict(list)
+    all_task_ids: list[uuid.UUID] = []
+    for t in tasks:
+        if t.project_id:
+            tasks_by_project[t.project_id].append(t)
+            all_task_ids.append(t.id)
+
+    sessions_by_task: dict[uuid.UUID, list[FocusSession]] = defaultdict(list)
+    if all_task_ids:
         focus_sessions = db.exec(
             select(FocusSession).where(
-                FocusSession.task_id.in_(task_ids), # type: ignore
+                FocusSession.task_id.in_(all_task_ids),  # type: ignore
                 FocusSession.is_deleted == False,
                 FocusSession.status == "completed"
             )
         ).all()
-        total_seconds = sum(s.actual_focus_seconds or (s.duration_minutes * 60) for s in focus_sessions)
+        for s in focus_sessions:
+            sessions_by_task[s.task_id].append(s)
+
+    responses: list[ProjectResponse] = []
+    for project in projects:
+        project_tasks = tasks_by_project.get(project.id, [])
+        total_tasks = len(project_tasks)
+        completed_tasks = sum(1 for t in project_tasks if t.status == "completed")
+
+        total_seconds = 0
+        for t in project_tasks:
+            for s in sessions_by_task.get(t.id, []):
+                total_seconds += s.actual_focus_seconds or (s.duration_minutes * 60)
         total_focus_minutes = total_seconds // 60
 
-    return ProjectResponse(
-        id=project.id,
-        user_id=project.user_id,
-        title=project.title,
-        description=project.description,
-        status=project.status,
-        color=project.color,
-        icon=project.icon,
-        is_deleted=project.is_deleted,
-        deleted_at=project.deleted_at,
-        created_at=project.created_at,
-        updated_at=project.updated_at,
-        total_tasks=total_tasks,
-        completed_tasks=completed_tasks,
-        total_focus_minutes=total_focus_minutes,
-    )
+        responses.append(
+            ProjectResponse(
+                id=project.id,
+                user_id=project.user_id,
+                title=project.title,
+                description=project.description,
+                status=project.status,
+                color=project.color,
+                icon=project.icon,
+                is_deleted=project.is_deleted,
+                deleted_at=project.deleted_at,
+                created_at=project.created_at,
+                updated_at=project.updated_at,
+                total_tasks=total_tasks,
+                completed_tasks=completed_tasks,
+                total_focus_minutes=total_focus_minutes,
+            )
+        )
+    return responses
+
+
+def _calculate_project_stats(db: Session, project: Project) -> ProjectResponse:
+    return _batch_calculate_project_stats(db, [project])[0]
 
 
 @router.post(
@@ -147,7 +175,7 @@ def list_projects(
     query = query.order_by(Project.updated_at.desc()) # type: ignore
 
     projects = db.exec(query).all()
-    return [_calculate_project_stats(db, p) for p in projects]
+    return _batch_calculate_project_stats(db, list(projects))
 
 
 @router.get(
@@ -215,7 +243,7 @@ def delete_project(
     project_id: uuid.UUID,
     current_user: Annotated[User, Depends(get_current_user)],
     db: Annotated[Session, Depends(get_db)],
-):
+) -> None:
     project = db.get(Project, project_id)
     if not project or project.user_id != current_user.id or project.is_deleted:
         raise HTTPException(

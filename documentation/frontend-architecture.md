@@ -26,6 +26,15 @@ The frontend codebase is located under `web/src/` and partitioned into focused d
 web/
 ├── src/
 │   ├── components/
+│   │   ├── admin/               # Dedicated system administration console
+│   │   │   ├── AdminDashboardView.tsx # Master admin container with auto-sync and ping
+│   │   │   ├── AdminOverviewTab.tsx   # System metrics, quick actions, and data export
+│   │   │   ├── AdminUsersTab.tsx      # User management, role elevation, password reset, soft/hard delete
+│   │   │   ├── AdminTasksTab.tsx      # Cross-system task backlog
+│   │   │   ├── AdminAnalyticsTab.tsx  # Platform-wide productivity analytics
+│   │   │   ├── AdminAuditLogsTab.tsx  # Audit trail viewer, search, severity filters, json export
+│   │   │   ├── AdminSettingsTab.tsx   # Runtime feature flags and maintenance toggles
+│   │   │   └── index.ts
 │   │   ├── analytics/           # Analytics view components and metrics helpers
 │   │   │   ├── ActivityHeatmapWidget.tsx
 │   │   │   ├── AnalyticsHeader.tsx
@@ -110,7 +119,7 @@ App
 ├── RegisterJourney (conditional conversational overlay)
 ├── ProfileModal (conditional modal)
 ├── SettingsSidebar (sliding right drawer)
-├── Navbar (hidden in Zen Mode or during Registration)
+├── Navbar (hidden in Zen Mode, during Registration, or in Admin Console)
 └── Main Content Container
     ├── [activeTab === 'dashboard'] -> DashboardView
     │   ├── DashboardHeader
@@ -133,24 +142,34 @@ App
     │   ├── ProjectCard list
     │   ├── CreateProjectModal
     │   └── EditProjectModal
-    └── [activeTab === 'analytics'] -> AnalyticsView
-        ├── AnalyticsHeader
-        ├── AnalyticsKpiCards
-        ├── DailySprintWidget
-        ├── MilestoneProgressWidget
-        ├── ActivityHeatmapWidget
-        └── ProjectTasksTable
+    ├── [activeTab === 'analytics'] -> AnalyticsView
+    │   ├── AnalyticsHeader
+    │   ├── AnalyticsKpiCards
+    │   ├── DailySprintWidget
+    │   ├── MilestoneProgressWidget
+    │   ├── ActivityHeatmapWidget
+    │   └── ProjectTasksTable
+    └── [activeTab === 'admin'] -> AdminDashboardView
+        ├── Header (Latency ping, Sync button, Workspace link, Logout)
+        ├── SubTab Navigation (Overview, Users, Tasks, Analytics, Audit, Settings)
+        └── SubTab Views (AdminOverviewTab, AdminUsersTab, AdminTasksTab, AdminAnalyticsTab, AdminAuditLogsTab, AdminSettingsTab)
 ```
 
 ---
 
-## View Navigation Architecture
+## View Navigation & Real-Time Sync Architecture
 
+### Instant Tab Switching
 The application operates as a high-performance Single-Page Application (SPA) utilizing instant in-memory tab switching without full page reloads:
-
-- Tabs: `dashboard`, `focus`, `tasks`, `projects`, `analytics`.
+- Tabs: `dashboard`, `focus`, `tasks`, `projects`, `analytics`, `admin`.
 - Controlled via `activeTab` inside the central Zustand store (`useStore`).
 - State Preservation: Active timers, countdown intervals, draft inputs, and session notes remain alive in memory when navigating between tabs.
+
+### Admin Real-Time Auto-Syncing & Refresh Strategy
+To prevent data staleness and eliminate the need for administrators to restart or refresh the page:
+1. **Periodic Auto-Poll:** A background interval queries `loadAdminData()` every 10 seconds, actively gating requests with `document.visibilityState === 'visible'` to conserve network resources when the browser tab is idle or backgrounded.
+2. **Sub-Tab Transition Fetch:** Whenever the administrator changes sub-tabs (e.g. from Users to Audit Logs), the view immediately triggers a data fetch to present fresh records instantly.
+3. **Dedicated Manual Sync Buttons:** Both the Admin Top Bar and the individual tab headers (Users Tab, Audit Logs Tab, Overview Tab) feature animated `Sync` buttons wired to `handleManualRefresh()`, giving administrators one-click instant synchronization.
 
 ---
 

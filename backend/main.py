@@ -23,11 +23,12 @@ app = FastAPI(
     redoc_url="/redoc",
 )
 
-# Enable CORS for web, mobile apps and dev tools
+# Enable CORS: restrict strictly to configured origins in production
+is_production = settings.ENVIRONMENT.lower() == "production"
 app.add_middleware(
     CORSMiddleware,
     allow_origins=settings.BACKEND_CORS_ORIGINS,
-    allow_origin_regex=r"^https?://(localhost|127\.0\.0\.1)(:\d+)?$",
+    allow_origin_regex=None if is_production else r"^https?://(localhost|127\.0\.0\.1)(:\d+)?$",
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],

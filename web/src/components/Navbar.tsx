@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useStore } from '../store/useStore';
 import type { Project } from '../types';
+import { Shield } from 'lucide-react';
 
 interface NavbarProps {
   projects?: Project[];
@@ -31,6 +32,7 @@ export const Navbar: React.FC<NavbarProps> = ({
 }) => {
   const {
     user,
+    isAdmin,
     activeTab,
     setActiveTab,
   } = useStore();
@@ -71,23 +73,34 @@ export const Navbar: React.FC<NavbarProps> = ({
       {/* 1. Left: User Avatar */}
       <div className="flex items-center">
         {user ? (
-          <button
-            onClick={onOpenProfile}
-            className="w-8 h-8 rounded-full overflow-hidden flex items-center justify-center bg-zinc-900/90 dark:bg-zinc-900/90 light:bg-zinc-50 border border-subtle-dark dark:border-subtle-dark light:border-transparent hover:border-zinc-700 dark:hover:border-zinc-700 light:hover:border-zinc-300 hover:opacity-90 active:scale-95 transition-all focus:outline-none cursor-pointer"
-            title={`${user.username || user.full_name || 'User'} · Profile`}
-          >
-            {user.avatar_url ? (
-              <img
-                src={user.avatar_url}
-                alt={user.username || user.full_name || 'User'}
-                className="w-full h-full object-cover grayscale"
-              />
-            ) : (
-              <span className="font-mono text-sm font-semibold text-zinc-300 dark:text-zinc-300 light:text-zinc-700 select-none">
-                {(user.username || user.full_name || user.email || 'U').trim().charAt(0).toUpperCase()}
+          <div className="flex items-center gap-2">
+            <button
+              onClick={onOpenProfile}
+              className="w-8 h-8 rounded-full overflow-hidden flex items-center justify-center bg-zinc-900/90 dark:bg-zinc-900/90 light:bg-zinc-50 border border-subtle-dark dark:border-subtle-dark light:border-transparent hover:border-zinc-700 dark:hover:border-zinc-700 light:hover:border-zinc-300 hover:opacity-90 active:scale-95 transition-all focus:outline-none cursor-pointer"
+              title={`${user.username || user.full_name || 'User'} · Profile`}
+            >
+              {user.avatar_url ? (
+                <img
+                  src={user.avatar_url}
+                  alt={user.username || user.full_name || 'User'}
+                  className="w-full h-full object-cover grayscale"
+                />
+              ) : (
+                <span className="font-mono text-sm font-semibold text-zinc-300 dark:text-zinc-300 light:text-zinc-700 select-none">
+                  {(user.username || user.full_name || user.email || 'U').trim().charAt(0).toUpperCase()}
+                </span>
+              )}
+            </button>
+            {isAdmin && (
+              <span
+                className="hidden sm:inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-mono uppercase bg-zinc-900 border border-zinc-800 text-zinc-300"
+                title="Logged in with Administrator Privileges"
+              >
+                <Shield className="w-2.5 h-2.5 text-emerald-400" />
+                <span>Admin</span>
               </span>
             )}
-          </button>
+          </div>
         ) : (
           <button
             onClick={onOpenAuth}
@@ -101,13 +114,13 @@ export const Navbar: React.FC<NavbarProps> = ({
         )}
       </div>
 
-      {/* 2. Center: Tasks | Focus | Projects */}
+      {/* 2. Center: Tasks | Focus | Projects | (Admin if privileged) */}
       <nav
         className={`relative flex items-center h-8 transition-all duration-500 ease-[cubic-bezier(0.16,1,0.3,1)] ${
-          isScrolledDown ? 'gap-12 md:gap-20' : 'gap-8 md:gap-14'
+          isScrolledDown ? 'gap-8 md:gap-14' : 'gap-6 md:gap-10'
         }`}
       >
-        {/* Left item: Tasks (expands outward when scrolling down) */}
+        {/* Left item: Tasks */}
         <button
           onClick={() => setActiveTab('tasks')}
           className={`text-xs uppercase font-mono tracking-[0.15em] transition-all duration-500 ease-[cubic-bezier(0.16,1,0.3,1)] cursor-pointer font-light transform ${
@@ -121,7 +134,7 @@ export const Navbar: React.FC<NavbarProps> = ({
           Tasks
         </button>
 
-        {/* Center item: Focus (animates smoothly above or below Tasks/Projects based on scroll direction) */}
+        {/* Center item: Focus */}
         <button
           onClick={() => setActiveTab('dashboard')}
           className={`text-xs uppercase tracking-[0.2em] font-semibold hover:opacity-90 hover:font-bold transition-all duration-500 ease-[cubic-bezier(0.16,1,0.3,1)] cursor-pointer focus:outline-none transform ${
@@ -133,7 +146,7 @@ export const Navbar: React.FC<NavbarProps> = ({
           Focus
         </button>
 
-        {/* Right item: Projects (expands outward when scrolling down) */}
+        {/* Right item: Projects */}
         <button
           onClick={() => setActiveTab('projects')}
           className={`text-xs uppercase font-mono tracking-[0.15em] transition-all duration-500 ease-[cubic-bezier(0.16,1,0.3,1)] cursor-pointer font-light transform ${
@@ -146,6 +159,22 @@ export const Navbar: React.FC<NavbarProps> = ({
         >
           Projects
         </button>
+
+        {/* Optional Admin Link if logged in as Admin */}
+        {isAdmin && (
+          <button
+            onClick={() => setActiveTab('admin')}
+            className={`text-xs uppercase font-mono tracking-[0.15em] transition-all duration-300 cursor-pointer font-light flex items-center gap-1.5 px-2.5 py-1 rounded-full ${
+              activeTab === 'admin'
+                ? 'bg-white text-black font-semibold'
+                : 'text-zinc-400 hover:text-white bg-zinc-900/60 border border-zinc-800'
+            }`}
+            title="System Administrator Dashboard"
+          >
+            <Shield className="w-3 h-3 text-emerald-400" />
+            <span>Admin</span>
+          </button>
+        )}
       </nav>
 
       {/* 3. Right: Triangle Icon Button */}

@@ -16,6 +16,7 @@ import {
   Sliders,
   Keyboard,
   ArrowRight,
+  Shield,
 } from 'lucide-react';
 
 interface SettingsSidebarProps {
@@ -35,6 +36,7 @@ export const SettingsSidebar: React.FC<SettingsSidebarProps> = ({
 }) => {
   const {
     user,
+    isAdmin,
     theme,
     toggleTheme,
     isZenMode,
@@ -499,6 +501,23 @@ export const SettingsSidebar: React.FC<SettingsSidebarProps> = ({
                 <span>Analytics</span>
                 <ArrowRight className="w-3 h-3 text-zinc-500" />
               </button>
+              {isAdmin && (
+                <button
+                  type="button"
+                  onClick={() => handleNavigate('admin')}
+                  className={`col-span-2 py-2.5 px-3 rounded-xl text-[10px] font-mono uppercase tracking-wider flex items-center justify-between border transition-all cursor-pointer ${
+                    activeTab === 'admin'
+                      ? 'bg-white text-black font-semibold border-white shadow-xs'
+                      : 'bg-zinc-900/90 text-emerald-400 hover:text-white border-zinc-800 hover:border-zinc-700'
+                  }`}
+                >
+                  <div className="flex items-center gap-2">
+                    <Shield className="w-3.5 h-3.5 text-emerald-400" />
+                    <span>System Admin Console</span>
+                  </div>
+                  <ArrowRight className="w-3 h-3 text-zinc-500" />
+                </button>
+              )}
             </div>
           </div>
 

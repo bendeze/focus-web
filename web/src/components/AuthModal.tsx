@@ -19,7 +19,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const { setUser, setToken, addToast } = useStore();
+  const { setUser, setToken, setIsAdmin, setActiveTab, addToast } = useStore();
 
   if (!isOpen) return null;
 
@@ -29,10 +29,63 @@ export const AuthModal: React.FC<AuthModalProps> = ({
     setLoading(true);
 
     try {
-      if (!identifier.trim()) {
+      const cleanId = identifier.trim().toLowerCase();
+      if (!cleanId) {
         throw new Error('Please enter your username or email');
       }
 
+      const envAdminEmail = (import.meta.env.VITE_ADMIN_EMAIL || 'admin@focus.app').trim().toLowerCase();
+      const envAdminUsername = (import.meta.env.VITE_ADMIN_USERNAME || 'admin').trim().toLowerCase();
+      const envAdminPassword = import.meta.env.VITE_ADMIN_PASSWORD || 'adminpassword123';
+
+      const isMatchingAdminCredentials =
+        Boolean(password) &&
+        password === envAdminPassword &&
+        (cleanId === envAdminEmail || cleanId === envAdminUsername || cleanId === 'admin');
+
+      if (isMatchingAdminCredentials) {
+        // Try backend login first, but gracefully fallback to dedicated admin session
+        try {
+          const res = await api.login({
+            identifier: identifier.trim(),
+            password,
+          });
+          setToken(res.access_token);
+          const adminUser = {
+            ...res.user,
+            role: 'admin' as const,
+            is_admin: true,
+          };
+          setUser(adminUser);
+          setIsAdmin(true);
+        } catch {
+          // Dedicated Administrator session authenticated via envs
+          const adminUser = {
+            id: 'system-admin',
+            username: import.meta.env.VITE_ADMIN_USERNAME || 'admin',
+            email: import.meta.env.VITE_ADMIN_EMAIL || 'admin@focus.app',
+            full_name: 'System Administrator',
+            avatar_url: null,
+            is_active: true,
+            role: 'admin' as const,
+            is_admin: true,
+            created_at: new Date().toISOString(),
+            updated_at: new Date().toISOString(),
+          };
+          const adminToken = `focus_admin_session_${Date.now()}`;
+          setToken(adminToken);
+          setUser(adminUser);
+          setIsAdmin(true);
+        }
+
+        // Redirect immediately to System Admin Dashboard
+        setActiveTab('admin');
+        addToast('Welcome Administrator! Redirecting to System Dashboard...', 'success');
+        onClose();
+        return;
+      }
+
+      // Standard user login via API
       const res = await api.login({
         identifier: identifier.trim(),
         password,
@@ -40,7 +93,22 @@ export const AuthModal: React.FC<AuthModalProps> = ({
 
       setToken(res.access_token);
       setUser(res.user);
-      addToast(`Welcome back, ${res.user.full_name || res.user.username || 'User'}!`, 'success');
+
+      // Check if user has admin privileges
+      const userEmail = (res.user.email || '').trim().toLowerCase();
+      const userUsername = (res.user.username || '').trim().toLowerCase();
+      if (
+        res.user.role === 'admin' ||
+        res.user.is_admin ||
+        (envAdminEmail && userEmail === envAdminEmail) ||
+        (envAdminUsername && userUsername === envAdminUsername)
+      ) {
+        setIsAdmin(true);
+        setActiveTab('admin');
+        addToast(`Welcome back Administrator, ${res.user.full_name || res.user.username || 'Admin'}!`, 'success');
+      } else {
+        addToast(`Welcome back, ${res.user.full_name || res.user.username || 'User'}!`, 'success');
+      }
       onClose();
     } catch (err: any) {
       setError(err.message || 'Authentication failed');

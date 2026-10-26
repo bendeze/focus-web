@@ -15,6 +15,7 @@ Key capabilities:
 - Weekly Focus Analytics: Recharts-powered 7-day focus duration bar charts with dynamic comparisons against previous week metrics.
 - Activity Heatmaps: GitHub-style consistency visualization across active days and task completions.
 - Task and Project Management: Priority tags, estimated durations, and real-time completion tracking.
+- System Administration & Security Auditing: Comprehensive admin console with auto-syncing metrics, user management (soft and hard deletion), platform runtime toggles, and security audit logs.
 - Unified Backend API: FastAPI service with SQLModel, PostgreSQL/SQLite support, and JWT authentication.
 
 ---
@@ -25,10 +26,11 @@ Key capabilities:
 focus-web/
 ├── backend/                  # FastAPI Backend Service
 │   ├── app/
-│   │   ├── api/              # REST API routes and dependencies
+│   │   ├── api/              # REST API routes, admin console, and dependencies
 │   │   ├── core/             # Configuration, security, and database engine
-│   │   └── models/           # SQLModel database tables and schemas
-│   ├── tests/                # Automated pytest suite
+│   │   ├── models/           # SQLModel database tables and schemas
+│   │   └── services/         # Shared services (security auditing & IP resolution)
+│   ├── tests/                # Automated pytest suite (auth, lifecycle, admin, audit)
 │   ├── main.py               # Application entrypoint
 │   ├── pyproject.toml        # Python project dependencies
 │   └── .env.example          # Environment variable template

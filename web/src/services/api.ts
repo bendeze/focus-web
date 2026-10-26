@@ -1,4 +1,16 @@
-import type { AuthResponse, FocusSession, FocusStats, Project, Task, User } from '../types';
+import type {
+  AdminProject,
+  AdminStats,
+  AdminSystemUser,
+  AuthResponse,
+  FocusSession,
+  FocusStats,
+  PlatformConfig,
+  Project,
+  SystemAuditLog,
+  Task,
+  User,
+} from '../types';
 
 
 const DEFAULT_API_URL = import.meta.env.VITE_API_URL || 'http://127.0.0.1:8000';
@@ -262,5 +274,168 @@ export const api = {
       headers: getHeaders(),
     });
     return handleResponse<FocusSession[]>(res);
+  },
+
+  // ----------------------------------------------------
+  // System Administrator API Endpoints (Real Backend)
+  // ----------------------------------------------------
+
+  async getAdminStats(): Promise<AdminStats> {
+    const res = await fetch(`${getBaseUrl()}/api/v1/admin/stats`, {
+      headers: getHeaders(),
+    });
+    return handleResponse<AdminStats>(res);
+  },
+
+  async getAdminUsers(): Promise<AdminSystemUser[]> {
+    const res = await fetch(`${getBaseUrl()}/api/v1/admin/users`, {
+      headers: getHeaders(),
+    });
+    return handleResponse<AdminSystemUser[]>(res);
+  },
+
+  async createAdminUser(data: { username: string; email: string; password: string; full_name?: string; role?: string }): Promise<User> {
+    const res = await fetch(`${getBaseUrl()}/api/v1/admin/users`, {
+      method: 'POST',
+      headers: getHeaders(),
+      body: JSON.stringify(data),
+    });
+    return handleResponse<User>(res);
+  },
+
+  async updateAdminUser(userId: string, data: { full_name?: string; role?: string; is_active?: boolean; is_admin?: boolean }): Promise<User> {
+    const res = await fetch(`${getBaseUrl()}/api/v1/admin/users/${userId}`, {
+      method: 'PATCH',
+      headers: getHeaders(),
+      body: JSON.stringify(data),
+    });
+    return handleResponse<User>(res);
+  },
+
+  async resetAdminUserPassword(userId: string, newPassword?: string): Promise<{ message: string; temporary_password: string }> {
+    const res = await fetch(`${getBaseUrl()}/api/v1/admin/users/${userId}/reset-password`, {
+      method: 'POST',
+      headers: getHeaders(),
+      body: JSON.stringify(newPassword ? { new_password: newPassword } : {}),
+    });
+    return handleResponse<{ message: string; temporary_password: string }>(res);
+  },
+
+  async deleteAdminUser(userId: string, hardDelete: boolean = false): Promise<{ message: string; hard_deleted?: boolean }> {
+    const url = new URL(`${getBaseUrl()}/api/v1/admin/users/${userId}`);
+    if (hardDelete) {
+      url.searchParams.set('hard_delete', 'true');
+    }
+    const res = await fetch(url.toString(), {
+      method: 'DELETE',
+      headers: getHeaders(),
+    });
+    return handleResponse<{ message: string; hard_deleted?: boolean }>(res);
+  },
+
+  async getAdminTasks(params?: { status?: string; priority?: string; limit?: number; offset?: number }): Promise<any[]> {
+    const url = new URL(`${getBaseUrl()}/api/v1/admin/tasks`);
+    if (params?.status) url.searchParams.set('status', params.status);
+    if (params?.priority) url.searchParams.set('priority', params.priority);
+    if (params?.limit !== undefined) url.searchParams.set('limit', params.limit.toString());
+    if (params?.offset !== undefined) url.searchParams.set('offset', params.offset.toString());
+    const res = await fetch(url.toString(), {
+      headers: getHeaders(),
+    });
+    return handleResponse<any[]>(res);
+  },
+
+  async getAdminProjects(params?: { status?: string; user_id?: string; limit?: number; offset?: number }): Promise<AdminProject[]> {
+    try {
+      const url = new URL(`${getBaseUrl()}/api/v1/admin/projects`);
+      if (params?.status) url.searchParams.set('status', params.status);
+      if (params?.user_id) url.searchParams.set('user_id', params.user_id);
+      if (params?.limit !== undefined) url.searchParams.set('limit', params.limit.toString());
+      if (params?.offset !== undefined) url.searchParams.set('offset', params.offset.toString());
+      console.log('[API] Fetching getAdminProjects URL:', url.toString(), 'token present:', !!localStorage.getItem('focus_token'));
+      const res = await fetch(url.toString(), {
+        headers: getHeaders(),
+      });
+      console.log('[API] getAdminProjects HTTP status:', res.status, res.statusText);
+      return await handleResponse<AdminProject[]>(res);
+    } catch (err: any) {
+      console.error('[API] getAdminProjects ERROR caught:', err.name, err.message, err);
+      throw err;
+    }
+  },
+
+  async createAdminProject(data: {
+    title: string;
+    description?: string;
+    user_id?: string;
+    status?: string;
+    color?: string;
+    icon?: string;
+  }): Promise<AdminProject> {
+    const res = await fetch(`${getBaseUrl()}/api/v1/admin/projects`, {
+      method: 'POST',
+      headers: getHeaders(),
+      body: JSON.stringify(data),
+    });
+    return handleResponse<AdminProject>(res);
+  },
+
+  async updateAdminProject(projectId: string, data: Partial<AdminProject>): Promise<AdminProject> {
+    const res = await fetch(`${getBaseUrl()}/api/v1/admin/projects/${projectId}`, {
+      method: 'PATCH',
+      headers: getHeaders(),
+      body: JSON.stringify(data),
+    });
+    return handleResponse<AdminProject>(res);
+  },
+
+  async deleteAdminProject(projectId: string, hardDelete: boolean = false): Promise<{ message: string; hard_deleted?: boolean }> {
+    const url = new URL(`${getBaseUrl()}/api/v1/admin/projects/${projectId}`);
+    if (hardDelete) url.searchParams.set('hard_delete', 'true');
+    const res = await fetch(url.toString(), {
+      method: 'DELETE',
+      headers: getHeaders(),
+    });
+    return handleResponse<{ message: string; hard_deleted?: boolean }>(res);
+  },
+
+  async getAdminAuditLogs(limit: number = 50): Promise<SystemAuditLog[]> {
+    const url = new URL(`${getBaseUrl()}/api/v1/admin/audit-logs`);
+    url.searchParams.set('limit', limit.toString());
+    const res = await fetch(url.toString(), {
+      headers: getHeaders(),
+    });
+    return handleResponse<SystemAuditLog[]>(res);
+  },
+
+  async clearAdminAuditLogs(): Promise<{ message: string }> {
+    const res = await fetch(`${getBaseUrl()}/api/v1/admin/audit-logs`, {
+      method: 'DELETE',
+      headers: getHeaders(),
+    });
+    return handleResponse<{ message: string }>(res);
+  },
+
+  async getAdminConfig(): Promise<PlatformConfig> {
+    const res = await fetch(`${getBaseUrl()}/api/v1/admin/config`, {
+      headers: getHeaders(),
+    });
+    return handleResponse<PlatformConfig>(res);
+  },
+
+  async updateAdminConfig(data: Partial<PlatformConfig>): Promise<PlatformConfig> {
+    const res = await fetch(`${getBaseUrl()}/api/v1/admin/config`, {
+      method: 'PATCH',
+      headers: getHeaders(),
+      body: JSON.stringify(data),
+    });
+    return handleResponse<PlatformConfig>(res);
+  },
+
+  async exportAdminData(): Promise<any> {
+    const res = await fetch(`${getBaseUrl()}/api/v1/admin/export`, {
+      headers: getHeaders(),
+    });
+    return handleResponse<any>(res);
   },
 };

@@ -51,11 +51,13 @@ def test_admin_access_control(client: TestClient):
 
 def test_admin_registration_and_endpoints(client: TestClient):
     # 1. Register admin as a usual account using admin username
+    admin_username = settings.ADMIN_USERNAME or "xxx"
+    admin_email = settings.ADMIN_EMAIL or "xxx@xxx.xxx"
     reg_admin = client.post(
         "/api/v1/auth/register",
         json={
-            "username": settings.ADMIN_USERNAME,
-            "email": settings.ADMIN_EMAIL,
+            "username": admin_username,
+            "email": admin_email,
             "password": "adminpassword123",
             "full_name": "System Administrator",
         }
@@ -80,7 +82,7 @@ def test_admin_registration_and_endpoints(client: TestClient):
     assert users_res.status_code == 200
     users_list = users_res.json()
     assert len(users_list) >= 1
-    admin_user_entry = next((u for u in users_list if u["username"] == settings.ADMIN_USERNAME), None)
+    admin_user_entry = next((u for u in users_list if u["username"] == admin_username), None)
     assert admin_user_entry is not None
     assert admin_user_entry["role"] == "admin"
 
@@ -249,14 +251,17 @@ def test_admin_sees_user_projects_and_tasks(client: TestClient):
     assert complete_res.status_code == 200
 
     # 4. Register admin
+    admin_username = settings.ADMIN_USERNAME or "xxx"
+    admin_email = settings.ADMIN_EMAIL or "xxx@xxx.xxx"
     reg_admin = client.post(
         "/api/v1/auth/register",
         json={
-            "username": settings.ADMIN_USERNAME,
-            "email": settings.ADMIN_EMAIL,
+            "username": admin_username,
+            "email": admin_email,
             "password": "adminpassword123"
         }
     )
+    assert reg_admin.status_code == 201
     admin_token = reg_admin.json()["access_token"]
     admin_headers = {"Authorization": f"Bearer {admin_token}"}
 

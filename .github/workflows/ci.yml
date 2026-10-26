@@ -56,4 +56,7 @@ jobs:
         run: uv sync
 
       - name: Run pytest test suite
+        env:
+          ADMIN_EMAIL: xxx@xxx.xxx
+          ADMIN_USERNAME: xxx
         run: uv run pytest

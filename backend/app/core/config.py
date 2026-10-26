@@ -17,8 +17,8 @@ class Settings(BaseSettings):
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 60 * 24 * 7  # 7 days for mobile app convenience
 
     # Administrator Account Credentials & Policies
-    ADMIN_EMAIL: Optional[str] = "[EMAIL_ADDRESS]"
-    ADMIN_USERNAME: Optional[str] = "admin"
+    ADMIN_EMAIL: Optional[str] = "xxx@xxx.xxx"
+    ADMIN_USERNAME: Optional[str] = "xxx"
 
     # CORS
     BACKEND_CORS_ORIGINS: list[str] | str = [

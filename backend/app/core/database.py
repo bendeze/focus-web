@@ -47,6 +47,13 @@ def init_db() -> None:
     # Ensure soft-delete columns exist on existing databases
     with engine.begin() as conn:
         if db_url.startswith("sqlite"):
+            # Ensure users table has role and is_admin
+            u_cols = [c[1] for c in conn.execute(text("PRAGMA table_info(users)")).fetchall()]
+            if u_cols and "is_admin" not in u_cols:
+                conn.execute(text("ALTER TABLE users ADD COLUMN is_admin BOOLEAN NOT NULL DEFAULT 0"))
+            if u_cols and "role" not in u_cols:
+                conn.execute(text("ALTER TABLE users ADD COLUMN role VARCHAR NOT NULL DEFAULT 'user'"))
+
             for tbl in ["projects", "tasks", "focus_sessions"]:
                 cols = [c[1] for c in conn.execute(text(f"PRAGMA table_info({tbl})")).fetchall()]
                 if cols and "is_deleted" not in cols:
@@ -54,6 +61,8 @@ def init_db() -> None:
                 if cols and "deleted_at" not in cols:
                     conn.execute(text(f"ALTER TABLE {tbl} ADD COLUMN deleted_at DATETIME NULL"))
         else:
+            conn.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS is_admin BOOLEAN NOT NULL DEFAULT FALSE"))
+            conn.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS role VARCHAR NOT NULL DEFAULT 'user'"))
             for tbl in ["projects", "tasks", "focus_sessions"]:
                 conn.execute(text(f"ALTER TABLE {tbl} ADD COLUMN IF NOT EXISTS is_deleted BOOLEAN NOT NULL DEFAULT FALSE"))
                 conn.execute(text(f"ALTER TABLE {tbl} ADD COLUMN IF NOT EXISTS deleted_at TIMESTAMP NULL"))

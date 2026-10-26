@@ -15,6 +15,10 @@ class Settings(BaseSettings):
     ALGORITHM: str = "HS256"
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 60 * 24 * 7  # 7 days for mobile app convenience
 
+    # Administrator Account Credentials & Policies
+    ADMIN_EMAIL: Optional[str] = "[EMAIL_ADDRESS]"
+    ADMIN_USERNAME: Optional[str] = "admin"
+
     # CORS
     BACKEND_CORS_ORIGINS: list[str] = [
         "http://localhost:5173",

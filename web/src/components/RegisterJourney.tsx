@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { useStore } from '../store/useStore';
+import { useStore, isUserAdmin } from '../store/useStore';
 import { api } from '../services/api';
 import { ArrowRight, Check, ArrowLeft, X, Lock, Mail, Loader2 } from 'lucide-react';
 
@@ -14,7 +14,7 @@ export const RegisterJourney: React.FC<RegisterJourneyProps> = ({
   onClose,
   onSwitchToLogin,
 }) => {
-  const { setUser, setToken, addToast } = useStore();
+  const { setUser, setToken, setIsAdmin, setActiveTab, addToast } = useStore();
 
   // Journey Steps: 1 = Username, 2 = Password & Confirm, 3 = Email
   const [step, setStep] = useState<1 | 2 | 3>(1);
@@ -85,7 +85,14 @@ export const RegisterJourney: React.FC<RegisterJourneyProps> = ({
 
       setToken(res.access_token);
       setUser(res.user);
-      addToast(`Welcome to Focus, ${res.user.username}!`, 'success');
+
+      if (isUserAdmin(res.user)) {
+        setIsAdmin(true);
+        setActiveTab('admin');
+        addToast(`Administrator session activated for @${res.user.username}!`, 'success');
+      } else {
+        addToast(`Welcome to Focus, ${res.user.username}!`, 'success');
+      }
       onClose();
     } catch (err: any) {
       setError(err.message || 'Registration failed. Please try again.');

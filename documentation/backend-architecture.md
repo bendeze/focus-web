@@ -24,25 +24,32 @@ The backend source code is organized under `backend/app/` following a clean sepa
 backend/
 ├── app/
 │   ├── api/
-│   │   ├── deps.py              # Dependency injection providers (DB session, current user)
+│   │   ├── deps.py              # Dependency injection providers (DB session, current user, admin guard)
 │   │   └── v1/                  # Version 1 API routers
-│   │       ├── auth.py          # Account registration, login, profile, credentials
+│   │       ├── auth.py          # Account registration, login, profile, credentials, account closure
 │   │       ├── projects.py      # Project organization and status management
 │   │       ├── tasks.py         # Task backlog, prioritization, reordering, status
 │   │       ├── focus.py         # Pomodoro timers, focus intervals, analytics
+│   │       ├── admin.py         # Platform configuration, user management, audit trails, system snapshot
 │   │       └── router.py        # Central router combining all v1 endpoints
 │   ├── core/
 │   │   ├── config.py            # Environment-driven settings and validation
 │   │   ├── database.py          # Database engine, connection pooling, table initialization
 │   │   └── security.py          # Password hashing, token encoding, and token decoding
-│   └── models/
-│       ├── user.py              # User database model and authentication schemas
-│       ├── project.py           # Project database model and creation/update schemas
-│       ├── task.py              # Task database model, backlog ordering, and update schemas
-│       └── focus.py             # FocusSession database model and metrics schemas
+│   ├── models/
+│   │   ├── user.py              # User database model and authentication schemas
+│   │   ├── project.py           # Project database model and creation/update schemas
+│   │   ├── task.py              # Task database model, backlog ordering, and update schemas
+│   │   ├── focus.py             # FocusSession database model and metrics schemas
+│   │   └── admin.py             # PlatformConfig, AuditLog, AdminStats, and AdminSystemUser schemas
+│   └── services/
+│       ├── __init__.py          # Services exports
+│       └── audit.py             # Centralized audit logging service and IP address resolution
 ├── tests/
 │   ├── test_auth.py             # Authentication and user account test cases
-│   └── test_projects_tasks_focus.py # End-to-end integration and data lifecycle tests
+│   ├── test_projects_tasks_focus.py # End-to-end integration and data lifecycle tests
+│   ├── test_admin.py            # Administrative privileges, system config, and hard-delete tests
+│   └── test_audit_security.py   # Security auditing, authentication telemetry, and account lifecycle tests
 ├── main.py                      # Application factory, middleware, and lifespan handlers
 └── pyproject.toml               # Build configuration, dependencies, and pytest options
 ```
@@ -63,7 +70,7 @@ The backend implements a classic layered architecture pattern:
                               v
 +-------------------------------------------------------------+
 |                     Routing Layer                           |
-|  - APIRouter modules: auth, projects, tasks, focus          |
+|  - APIRouter modules: auth, projects, tasks, focus, admin   |
 |  - URL routing, HTTP verb matching, status codes            |
 +-------------------------------------------------------------+
                               |
@@ -72,6 +79,7 @@ The backend implements a classic layered architecture pattern:
 |               Dependency Injection Layer                    |
 |  - get_db: Session provisioning with context teardown       |
 |  - get_current_user: Bearer JWT validation and user lookup  |
+|  - get_current_admin_user: Role="admin" validation guard    |
 +-------------------------------------------------------------+
                               |
                               v
@@ -80,6 +88,7 @@ The backend implements a classic layered architecture pattern:
 |  - Pydantic v2 model validators (schemas)                   |
 |  - Idempotency resolution (X-Idempotency-Key)               |
 |  - Batch calculations (aggregation of task/session metrics) |
+|  - Centralized audit logging (app/services/audit.py)        |
 +-------------------------------------------------------------+
                               |
                               v
@@ -103,12 +112,13 @@ The backend implements a classic layered architecture pattern:
 3. Dependency Resolution:
    - `get_db`: Yields an active SQLModel `Session`.
    - `get_current_user`: Extracts the Bearer token from the `Authorization` header, decodes and verifies the JWT signature, and queries the user record. If the token is invalid or the account is deactivated, an HTTP 401 or 403 error is raised immediately.
+   - `get_current_admin_user`: Enforces `user.role == "admin"`. If non-admin, records an `AUTH_UNAUTHORIZED_ACCESS` audit event and halts execution with HTTP 403 Forbidden.
 
 4. Validation:
    Incoming payloads (such as `TaskCreate` or `UserRegister`) are validated via Pydantic model validators before handler logic executes.
 
-5. Business Execution & Persistence:
-   The handler performs required validations (such as verifying project ownership), interacts with the database session, commits changes, and refreshes models.
+5. Business Execution, Auditing & Persistence:
+   The handler performs required validations (such as verifying project ownership), calls `log_audit_event(...)` for security or operational milestones, interacts with the database session, commits changes, and refreshes models.
 
 6. Response Serialization:
    The result is serialized into a designated response model (such as `TaskResponse` or `ProjectResponse`), stripping internal database fields (like `hashed_password`).

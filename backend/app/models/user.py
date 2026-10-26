@@ -17,6 +17,8 @@ class User(SQLModel, table=True):
     full_name: Optional[str] = Field(default=None, nullable=True)
     avatar_url: Optional[str] = Field(default=None, nullable=True)
     is_active: bool = Field(default=True, nullable=False)
+    role: str = Field(default="user", nullable=False)
+    is_admin: bool = Field(default=False, nullable=False)
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc), nullable=False)
     updated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc), nullable=False)
 
@@ -71,6 +73,8 @@ class UserResponse(SQLModel):
     full_name: Optional[str] = None
     avatar_url: Optional[str] = None
     is_active: bool
+    role: str = "user"
+    is_admin: bool = False
     created_at: datetime
     updated_at: datetime
 

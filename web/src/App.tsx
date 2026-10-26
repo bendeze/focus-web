@@ -11,6 +11,7 @@ import { FocusTimer } from './components/FocusTimer';
 import { TasksView } from './components/TasksView';
 import { ProjectsView } from './components/ProjectsView';
 import { AnalyticsView } from './components/AnalyticsView';
+import { AdminDashboardView } from './components/admin';
 
 import { RegisterJourney } from './components/RegisterJourney';
 import { SettingsSidebar } from './components/SettingsSidebar';
@@ -22,8 +23,10 @@ export const App: React.FC = () => {
   const {
     user,
     token,
+    isAdmin,
     setUser,
     activeTab,
+    setActiveTab,
     setActiveSession,
     isZenMode,
   } = useStore();
@@ -60,18 +63,31 @@ export const App: React.FC = () => {
   useEffect(() => {
     const initialize = async () => {
       if (token) {
+        if (token.startsWith('focus_admin_session_')) {
+          await refreshAllData();
+          return;
+        }
         try {
           const me = await api.getMe();
           setUser(me);
           await refreshAllData();
         } catch {
-          setUser(null);
+          if (!token.startsWith('focus_admin_session_')) {
+            setUser(null);
+          }
         }
       }
     };
 
     initialize();
   }, [token, setUser, refreshAllData]);
+
+  // Protect admin route from non-admin users
+  useEffect(() => {
+    if (activeTab === 'admin' && !isAdmin) {
+      setActiveTab('dashboard');
+    }
+  }, [activeTab, isAdmin, setActiveTab]);
 
   // Background Delta Sync (every 10s)
   useEffect(() => {
@@ -143,7 +159,7 @@ export const App: React.FC = () => {
         }}
       />
 
-      {!isZenMode && !isRegisterOpen && (
+      {!isZenMode && !isRegisterOpen && activeTab !== 'admin' && (
         <Navbar
           projects={projects}
           onOpenAuth={() => setIsAuthOpen(true)}
@@ -153,7 +169,30 @@ export const App: React.FC = () => {
         />
       )}
 
+      {/* Floating Quick Action Button: jump to Admin Console if currently exploring User Workspace */}
+      {isAdmin && activeTab !== 'admin' && !isZenMode && (
+        <div className="fixed bottom-6 right-6 z-50 animate-in fade-in slide-in-from-bottom-2 duration-300">
+          <button
+            onClick={() => setActiveTab('admin')}
+            className="flex items-center gap-2 px-4 py-2.5 rounded-full bg-zinc-950/95 hover:bg-zinc-900 border border-zinc-700/80 text-white shadow-2xl backdrop-blur-md text-xs font-mono tracking-wider uppercase transition-all cursor-pointer hover:border-zinc-500 hover:scale-102"
+            title="Return to System Admin Console"
+          >
+            <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
+            <span>Admin Console</span>
+            <span className="text-zinc-500">→</span>
+          </button>
+        </div>
+      )}
+
       <main className="flex-1">
+        {activeTab === 'admin' && (
+          <AdminDashboardView
+            tasks={tasks}
+            projects={projects}
+            onRefresh={refreshAllData}
+          />
+        )}
+
         {activeTab === 'dashboard' && (
           <DashboardView
             tasks={tasks}

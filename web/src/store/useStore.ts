@@ -1,9 +1,21 @@
 import { create } from 'zustand';
 import type { FocusSession, ToastMessage, User } from '../types';
 
+export function isUserAdmin(user: User | null): boolean {
+  if (!user) return false;
+  if (user.role === 'admin' || user.is_admin) return true;
+  const envEmail = (import.meta.env.VITE_ADMIN_EMAIL || 'admin@focus.app').trim().toLowerCase();
+  const envUser = (import.meta.env.VITE_ADMIN_USERNAME || 'admin').trim().toLowerCase();
+  if (envEmail && user.email && user.email.toLowerCase() === envEmail) return true;
+  if (envUser && user.username && user.username.toLowerCase() === envUser) return true;
+  return false;
+}
+
 interface AppState {
   user: User | null;
   token: string | null;
+  isAdmin: boolean;
+  setIsAdmin: (isAdmin: boolean) => void;
   setUser: (user: User | null) => void;
   setToken: (token: string | null) => void;
   logout: () => void;
@@ -11,8 +23,8 @@ interface AppState {
   theme: 'dark' | 'light';
   toggleTheme: () => void;
 
-  activeTab: 'dashboard' | 'focus' | 'tasks' | 'projects' | 'analytics' | 'settings';
-  setActiveTab: (tab: 'dashboard' | 'focus' | 'tasks' | 'projects' | 'analytics' | 'settings') => void;
+  activeTab: 'dashboard' | 'focus' | 'tasks' | 'projects' | 'analytics' | 'settings' | 'admin';
+  setActiveTab: (tab: 'dashboard' | 'focus' | 'tasks' | 'projects' | 'analytics' | 'settings' | 'admin') => void;
 
   taskProjectFilter: string;
   setTaskProjectFilter: (filter: string) => void;
@@ -50,6 +62,7 @@ interface AppState {
 
 const savedToken = localStorage.getItem('focus_token');
 const savedUser = localStorage.getItem('focus_user') ? JSON.parse(localStorage.getItem('focus_user')!) : null;
+const savedIsAdmin = localStorage.getItem('focus_is_admin') === 'true' || isUserAdmin(savedUser);
 const initialTheme = (localStorage.getItem('focus_theme') as 'dark' | 'light') || 'dark';
 
 if (typeof document !== 'undefined') {
@@ -65,13 +78,27 @@ if (typeof document !== 'undefined') {
 export const useStore = create<AppState>((set, get) => ({
   user: savedUser,
   token: savedToken,
+  isAdmin: savedIsAdmin,
+  setIsAdmin: (isAdmin) => {
+    localStorage.setItem('focus_is_admin', isAdmin ? 'true' : 'false');
+    set({ isAdmin });
+  },
   setUser: (user) => {
+    const isAdmin = isUserAdmin(user);
     if (user) {
-      localStorage.setItem('focus_user', JSON.stringify(user));
+      const augmentedUser: User = {
+        ...user,
+        role: isAdmin ? 'admin' : (user.role || 'user'),
+        is_admin: isAdmin,
+      };
+      localStorage.setItem('focus_user', JSON.stringify(augmentedUser));
+      localStorage.setItem('focus_is_admin', isAdmin ? 'true' : 'false');
+      set({ user: augmentedUser, isAdmin });
     } else {
       localStorage.removeItem('focus_user');
+      localStorage.removeItem('focus_is_admin');
+      set({ user: null, isAdmin: false });
     }
-    set({ user });
   },
   setToken: (token) => {
     if (token) {
@@ -84,7 +111,16 @@ export const useStore = create<AppState>((set, get) => ({
   logout: () => {
     localStorage.removeItem('focus_token');
     localStorage.removeItem('focus_user');
-    set({ user: null, token: null, activeSession: null, isTimerRunning: false, taskTimers: {} });
+    localStorage.removeItem('focus_is_admin');
+    set({
+      user: null,
+      token: null,
+      isAdmin: false,
+      activeTab: 'dashboard',
+      activeSession: null,
+      isTimerRunning: false,
+      taskTimers: {},
+    });
     get().addToast('Logged out successfully', 'info');
   },
 

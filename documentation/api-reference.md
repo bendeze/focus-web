@@ -163,7 +163,7 @@ Response:
 ```
 
 ### POST `/api/v1/auth/logout`
-Explicit logout endpoint for clients to notify session termination.
+Explicit logout endpoint for clients to notify session termination. Triggers an `AUTH_LOGOUT` audit log event.
 
 - Authentication: Bearer Token
 - Status Code: 200 OK
@@ -172,6 +172,19 @@ Response:
 ```json
 {
   "message": "Successfully logged out"
+}
+```
+
+### DELETE `/api/v1/auth/me`
+Self-service account deletion/closure endpoint. Soft-deletes or deactivates the authenticated user account and soft-deletes associated tasks, projects, and focus sessions. Emits a high-severity `USER_ACCOUNT_CLOSED` audit record.
+
+- Authentication: Bearer Token
+- Status Code: 200 OK
+
+Response:
+```json
+{
+  "message": "Account successfully closed and deactivated"
 }
 ```
 
@@ -454,3 +467,143 @@ Response:
   "active_session": null
 }
 ```
+
+---
+
+## 6. Admin Platform & Audit Logs (`/api/v1/admin`)
+
+All routes under `/api/v1/admin` require an authenticated user with `role: "admin"`. Non-admin requests receive HTTP 403 Forbidden and generate an `AUTH_UNAUTHORIZED_ACCESS` audit event.
+
+### GET `/api/v1/admin/stats`
+Returns system-wide aggregated KPIs and analytics for the admin console.
+
+- Authentication: Bearer Token (`role: "admin"`)
+- Status Code: 200 OK
+
+Response:
+```json
+{
+  "total_users": 42,
+  "active_users": 38,
+  "total_tasks": 312,
+  "completed_tasks": 210,
+  "total_focus_minutes": 15400,
+  "total_focus_sessions": 620,
+  "avg_focus_per_user": 366.7,
+  "system_status": "operational"
+}
+```
+
+### GET `/api/v1/admin/users`
+Lists all registered users along with their role, account status, task count, and total focus minutes.
+
+- Authentication: Bearer Token (`role: "admin"`)
+- Status Code: 200 OK
+
+### POST `/api/v1/admin/users`
+Creates a new user account with specified role (`admin` or `user`). Emits `USER_CREATED` audit log.
+
+- Authentication: Bearer Token (`role: "admin"`)
+- Status Code: 200 OK
+
+Request Body:
+```json
+{
+  "username": "sarah_ops",
+  "email": "sarah@company.internal",
+  "password": "TemporaryPassword123!",
+  "full_name": "Sarah Connor",
+  "role": "admin"
+}
+```
+
+### PATCH `/api/v1/admin/users/{user_id}`
+Updates an existing user's role, active status, or display name. Emits `USER_UPDATED` or `USER_ROLE_CHANGED`.
+
+- Authentication: Bearer Token (`role: "admin"`)
+- Status Code: 200 OK
+
+### DELETE `/api/v1/admin/users/{user_id}`
+Deletes or deactivates a user account.
+- By default (`hard_delete=false`), marks the user account as deactivated / suspended (`is_active=False`).
+- When query parameter `?hard_delete=true` is provided, permanently expunges the user record and cascades deletions across all user data in the database.
+- Emits `USER_DELETED` (with details specifying soft vs permanent hard expunge).
+
+- Authentication: Bearer Token (`role: "admin"`)
+- Status Code: 200 OK
+
+### POST `/api/v1/admin/users/{user_id}/reset-password`
+Administratively overrides a user's password. Emits `PASSWORD_RESET` audit event.
+
+- Authentication: Bearer Token (`role: "admin"`)
+- Status Code: 200 OK
+
+Request Body:
+```json
+{
+  "new_password": "NewSecurePassword456!"
+}
+```
+
+### GET `/api/v1/admin/audit-logs`
+Retrieves security and operational audit trail records. Supports an optional `limit` query parameter (default: 100, max: 500).
+
+- Authentication: Bearer Token (`role: "admin"`)
+- Status Code: 200 OK
+
+Response:
+```json
+[
+  {
+    "id": "e0b88a8f-b98a-4c28-98f5-96147493cb01",
+    "timestamp": "2026-10-22T21:15:30Z",
+    "action": "AUTH_LOGIN_SUCCESS",
+    "actor": "admin",
+    "details": "User signed in successfully",
+    "severity": "success",
+    "ip_address": "127.0.0.1"
+  }
+]
+```
+
+### DELETE `/api/v1/admin/audit-logs`
+Clears / truncates all audit log records from the database. Emits a final `AUDIT_LOGS_CLEARED` event.
+
+- Authentication: Bearer Token (`role: "admin"`)
+- Status Code: 200 OK
+
+### GET `/api/v1/admin/config`
+Retrieves platform-wide feature flags and operational configuration.
+
+- Authentication: Bearer Token (`role: "admin"`)
+- Status Code: 200 OK
+
+Response:
+```json
+{
+  "allow_registrations": true,
+  "maintenance_mode": false,
+  "guest_mode_enabled": true,
+  "enforce_email_verification": false,
+  "default_focus_duration": 25
+}
+```
+
+### PATCH `/api/v1/admin/config`
+Updates platform-wide configuration settings. Emits `CONFIG_UPDATED` audit log.
+
+- Authentication: Bearer Token (`role: "admin"`)
+- Status Code: 200 OK
+
+### GET `/api/v1/admin/tasks`
+Returns system-wide tasks across all users for administrator oversight.
+
+- Authentication: Bearer Token (`role: "admin"`)
+- Status Code: 200 OK
+
+### GET `/api/v1/admin/export`
+Exports a full JSON snapshot of all system users, tasks, projects, sessions, platform configuration, and audit logs. Emits `SYSTEM_DATA_EXPORTED` audit log.
+
+- Authentication: Bearer Token (`role: "admin"`)
+- Status Code: 200 OK
+

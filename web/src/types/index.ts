@@ -5,8 +5,51 @@ export interface User {
   full_name: string | null;
   avatar_url: string | null;
   is_active: boolean;
+  role?: 'admin' | 'user';
+  is_admin?: boolean;
   created_at: string;
   updated_at: string;
+}
+
+export interface AdminSystemUser extends User {
+  role: 'admin' | 'user';
+  status: 'active' | 'suspended';
+  total_focus_minutes?: number;
+  tasks_count?: number;
+  last_active?: string;
+}
+
+export interface SystemAuditLog {
+  id: string;
+  timestamp: string;
+  action: string;
+  actor: string;
+  severity: 'info' | 'success' | 'warning' | 'danger';
+  details: string;
+  ip_address: string;
+}
+
+export interface PlatformConfig {
+  allow_registrations: boolean;
+  maintenance_mode: boolean;
+  guest_mode_enabled: boolean;
+  enforce_email_verification: boolean;
+  default_focus_duration: number;
+}
+
+export interface AdminStats {
+  total_users: number;
+  active_users: number;
+  admin_users: number;
+  total_focus_minutes: number;
+  total_focus_hours: number;
+  total_tasks: number;
+  completed_tasks: number;
+  completion_rate: number;
+  total_projects: number;
+  system_status: string;
+  daily_focus_activity: { day: string; focusHours: number; sessions: number }[];
+  hourly_distribution: { hour: string; sessions: number }[];
 }
 
 export interface AuthResponse {
@@ -32,6 +75,12 @@ export interface Project {
   completed_tasks: number;
   total_focus_minutes: number;
 }
+
+export interface AdminProject extends Project {
+  username?: string;
+  user_email?: string;
+}
+
 
 export interface Task {
   id: string;

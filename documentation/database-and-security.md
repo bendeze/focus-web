@@ -21,6 +21,7 @@ The database schema is modeled using SQLModel (SQLAlchemy 2.0). All primary iden
 | full_name: VARCHAR (Nullable)                         |
 | avatar_url: VARCHAR (Nullable)                        |
 | is_active: BOOLEAN (Default: True)                    |
+| role: VARCHAR (Default: "user")                       |
 | created_at: TIMESTAMP WITH TIME ZONE                  |
 | updated_at: TIMESTAMP WITH TIME ZONE                  |
 +-------------------------------------------------------+
@@ -66,6 +67,30 @@ The database schema is modeled using SQLModel (SQLAlchemy 2.0). All primary iden
                                 | created_at: TIMESTAMP       |
                                 | updated_at: TIMESTAMP       |
                                 +-----------------------------+
+
++-------------------------------------------------------+
+|                      audit_logs                       |
++-------------------------------------------------------+
+| id: UUID (PK)                                         |
+| timestamp: TIMESTAMP WITH TIME ZONE (Default: now)    |
+| action: VARCHAR (Not Null, Index)                     |
+| actor: VARCHAR (Not Null, Index)                      |
+| details: TEXT (Not Null)                              |
+| severity: VARCHAR (info | success | warning | danger) |
+| ip_address: VARCHAR (Not Null)                        |
++-------------------------------------------------------+
+
++-------------------------------------------------------+
+|                   platform_configs                    |
++-------------------------------------------------------+
+| id: INT (PK, Single row id=1)                         |
+| allow_registrations: BOOLEAN (Default: True)          |
+| maintenance_mode: BOOLEAN (Default: False)            |
+| guest_mode_enabled: BOOLEAN (Default: True)           |
+| enforce_email_verification: BOOLEAN (Default: False)  |
+| default_focus_duration: INT (Default: 25)             |
+| updated_at: TIMESTAMP WITH TIME ZONE                  |
++-------------------------------------------------------+
 ```
 
 ---
@@ -110,9 +135,33 @@ The database schema is modeled using SQLModel (SQLAlchemy 2.0). All primary iden
   - `ix_focus_sessions_status` on `status`
   - `ix_focus_sessions_is_deleted` on `is_deleted`
 
+### `audit_logs` Table
+- Maintains an immutable audit trail of security-sensitive events, authentication milestones, and administrative operations.
+- Primary Key: `id` (UUIDv4)
+- Fields:
+  - `timestamp`: UTC timestamp with timezone
+  - `action`: Canonical event identifier (e.g. `AUTH_LOGIN_SUCCESS`, `USER_ACCOUNT_CLOSED`)
+  - `actor`: Username, email, or `anonymous` identifier who triggered the event
+  - `details`: Human-readable description and operational parameters
+  - `severity`: Event tier (`info`, `success`, `warning`, `danger`)
+  - `ip_address`: Resolved client IP address
+- Indexes:
+  - `ix_audit_logs_action` on `action`
+  - `ix_audit_logs_actor` on `actor`
+  - `ix_audit_logs_timestamp` on `timestamp`
+
+### `platform_configs` Table
+- Single-row platform settings store for runtime feature toggles and platform health management.
+- Fields:
+  - `allow_registrations`: Enables or disables new account registrations
+  - `maintenance_mode`: Signals platform maintenance to client applications
+  - `guest_mode_enabled`: Allows unauthenticated offline task management
+  - `enforce_email_verification`: Flag for mandatory email verification
+  - `default_focus_duration`: Default session minutes for new timers (default: 25)
+
 ---
 
-## 3. Data Lifecycle & Soft-Deletion Architecture
+## 3. Data Lifecycle, Soft-Deletion & Hard Deletion
 
 To protect against irreversible accidental data loss and support offline synchronization, entities are soft-deleted by default:
 
@@ -123,8 +172,14 @@ To protect against irreversible accidental data loss and support offline synchro
    - When a Project is deleted, all associated non-deleted Tasks are automatically marked `is_deleted = True`.
    - All associated Focus Sessions for those Tasks are similarly marked `is_deleted = True`.
    - When an individual Task is deleted, its associated Focus Sessions are marked `is_deleted = True`.
+   - When a user self-deactivates their account (`DELETE /api/v1/auth/me`), their user account is deactivated and all their projects, tasks, and sessions are soft-deleted.
 
-3. Query Isolation:
+3. Hard Deletion (Permanent Expunge):
+   - In compliance with privacy regulations (GDPR "Right to be Forgotten") and administrative requirements, administrators can permanently expunge records via `DELETE /api/v1/admin/users/{id}?hard_delete=true`.
+   - Hard deletion runs explicit cascade deletions removing all associated `FocusSession`, `Task`, and `Project` records before calling `db.delete(user)` to permanently purge the user row from physical storage.
+   - Emits a high-severity `USER_DELETED` audit event explicitly noting that the record was permanently expunged.
+
+4. Query Isolation:
    Standard queries append `.where(Model.is_deleted == False)` unless `include_deleted=True` is explicitly requested during delta synchronization.
 
 ---
@@ -188,3 +243,37 @@ Located in `main.py`:
 - In multi-user systems, Insecure Direct Object References (IDOR) are prevented by enforcing user ownership checks in every query:
   `query = query.where(Model.user_id == current_user.id)`
 - Attempts to access, edit, or delete a record belonging to another user return HTTP 404 Not Found rather than exposing existence through 403 Forbidden.
+
+### Role-Based Access Control (RBAC) & Administrative Privileges
+Located in `app/api/deps.py`:
+- Users possess an explicit `role` attribute (`"user"` or `"admin"`).
+- Protected administrative endpoints inject `get_current_admin_user`.
+- If an unauthenticated or non-admin user attempts access:
+  1. An `AUTH_UNAUTHORIZED_ACCESS` audit event is logged with `severity="danger"` and the client IP address.
+  2. The endpoint immediately rejects the request with HTTP 403 Forbidden.
+
+### Centralized Security & Operational Auditing
+Located in `app/services/audit.py`:
+- Implements `log_audit_event(db, action, actor, details, severity, ip_address)` to record high-signal security and operational events.
+- Client IP Extraction: `get_client_ip(request)` safely checks reverse proxy headers (`X-Forwarded-For`), extracting the first public client address, and falls back to `request.client.host`.
+- Event Taxonomy:
+  - **Category A (Authentication & Access Control):**
+    - `AUTH_REGISTER`: New user registration (`severity="success"`)
+    - `AUTH_LOGIN_SUCCESS`: Successful authentication (`severity="success"`)
+    - `AUTH_LOGIN_FAILED`: Failed credentials attempt (`severity="warning"`)
+    - `AUTH_LOGOUT`: Explicit session termination (`severity="info"`)
+    - `AUTH_PASSWORD_CHANGED`: Password change verified and committed (`severity="success"`)
+    - `AUTH_PASSWORD_CHANGE_FAILED`: Password change failure (`severity="warning"`)
+    - `AUTH_UNAUTHORIZED_ACCESS`: Forbidden access attempt to admin console (`severity="danger"`)
+  - **Category B (Account & Identity Operations):**
+    - `USER_PROFILE_UPDATED`: User modified display name, handle, or avatar (`severity="info"`)
+    - `USER_ACCOUNT_CLOSED`: Self-service account deactivation and cascade soft deletion (`severity="warning"`)
+  - **Category C (Administrative Operations):**
+    - `USER_CREATED`: Administrator provisioned an account (`severity="info"`)
+    - `USER_UPDATED`: Administrator modified role or active status (`severity="info"`)
+    - `USER_DELETED`: Administrator deactivated (soft) or permanently expunged (hard) user (`severity="danger"`)
+    - `PASSWORD_RESET`: Administrator overrode credentials (`severity="warning"`)
+    - `CONFIG_UPDATED`: Platform configuration toggles modified (`severity="warning"`)
+    - `AUDIT_LOGS_CLEARED`: Audit log history purged (`severity="danger"`)
+    - `SYSTEM_DATA_EXPORTED`: Snapshot database exported as JSON (`severity="info"`)
+

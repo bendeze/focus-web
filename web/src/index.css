@@ -13,7 +13,8 @@
 
 @layer base {
   :root {
-    --font-sans: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    --font-sans: 'Rethink Sans', 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    --dash-color: rgba(255, 255, 255, 0.12);
   }
   
   html {
@@ -22,6 +23,7 @@
   
   html.light {
     color-scheme: light;
+    --dash-color: rgba(0, 0, 0, 0.12);
   }
 
   body {
@@ -32,7 +34,7 @@
   }
 
   html.light body {
-    background-color: #F5F5F3;
+    background-color: #F0EFEA;
     color: #111113;
   }
 
@@ -40,6 +42,14 @@
   .tabular-nums {
     font-variant-numeric: tabular-nums;
   }
+}
+
+/* Terra Industries Architectural Precision Hairlines */
+.dash-y {
+  background-image: repeating-linear-gradient(to bottom, var(--dash-color) 0 4px, transparent 4px 8px);
+}
+.dash-x {
+  background-image: repeating-linear-gradient(to right, var(--dash-color) 0 4px, transparent 4px 8px);
 }
 
 /* Figma Tailored Tokens */

@@ -61,4 +61,6 @@ captures/
 Thumbs.db
 .agents/
 .gemini/
+temp_git_commits.txt
+web/src/services/temp*.json
 

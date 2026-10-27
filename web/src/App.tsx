@@ -12,6 +12,7 @@ import { TasksView } from './components/TasksView';
 import { ProjectsView } from './components/ProjectsView';
 import { AnalyticsView } from './components/AnalyticsView';
 import { AdminDashboardView } from './components/admin';
+import { LandingPage } from './components/landing';
 
 import { RegisterJourney } from './components/RegisterJourney';
 import { SettingsSidebar } from './components/SettingsSidebar';
@@ -159,7 +160,7 @@ export const App: React.FC = () => {
         }}
       />
 
-      {!isZenMode && !isRegisterOpen && activeTab !== 'admin' && (
+      {!isZenMode && !isRegisterOpen && activeTab !== 'admin' && activeTab !== 'landing' && (
         <Navbar
           projects={projects}
           onOpenAuth={() => setIsAuthOpen(true)}
@@ -170,7 +171,7 @@ export const App: React.FC = () => {
       )}
 
       {/* Floating Quick Action Button: jump to Admin Console if currently exploring User Workspace */}
-      {isAdmin && activeTab !== 'admin' && !isZenMode && (
+      {isAdmin && activeTab !== 'admin' && activeTab !== 'landing' && !isZenMode && (
         <div className="fixed bottom-6 right-6 z-50 animate-in fade-in slide-in-from-bottom-2 duration-300">
           <button
             onClick={() => setActiveTab('admin')}
@@ -185,6 +186,10 @@ export const App: React.FC = () => {
       )}
 
       <main className="flex-1">
+        {activeTab === 'landing' && (
+          <LandingPage onOpenAuth={() => setIsAuthOpen(true)} />
+        )}
+
         {activeTab === 'admin' && (
           <AdminDashboardView
             tasks={tasks}

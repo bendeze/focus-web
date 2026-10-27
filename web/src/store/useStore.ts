@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import type { FocusSession, ToastMessage, User } from '../types';
+import type { FocusSession, ToastMessage, User, ActiveTab } from '../types';
 
 export function isUserAdmin(user: User | null): boolean {
   if (!user) return false;
@@ -23,8 +23,8 @@ interface AppState {
   theme: 'dark' | 'light';
   toggleTheme: () => void;
 
-  activeTab: 'dashboard' | 'focus' | 'tasks' | 'projects' | 'analytics' | 'settings' | 'admin';
-  setActiveTab: (tab: 'dashboard' | 'focus' | 'tasks' | 'projects' | 'analytics' | 'settings' | 'admin') => void;
+  activeTab: ActiveTab;
+  setActiveTab: (tab: ActiveTab) => void;
 
   taskProjectFilter: string;
   setTaskProjectFilter: (filter: string) => void;
@@ -138,7 +138,7 @@ export const useStore = create<AppState>((set, get) => ({
     set({ theme: nextTheme });
   },
 
-  activeTab: 'dashboard',
+  activeTab: 'landing',
   setActiveTab: (activeTab) => set({ activeTab }),
 
   taskProjectFilter: 'all',

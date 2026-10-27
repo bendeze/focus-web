@@ -131,3 +131,5 @@ export interface ToastMessage {
   type: 'success' | 'info' | 'error';
   message: string;
 }
+
+export type ActiveTab = 'landing' | 'dashboard' | 'focus' | 'tasks' | 'projects' | 'analytics' | 'settings' | 'admin';

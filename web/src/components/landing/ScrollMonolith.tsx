@@ -27,7 +27,6 @@ export const ScrollMonolith: React.FC = () => {
   const rotateX = (0.5 - progress) * 16 + mouseOffset.y;
   const rotateY = mouseOffset.x;
   const translateY = (0.5 - progress) * 40;
-  const glowOpacity = Math.sin(progress * Math.PI) * 0.85;
 
   const handlePlayTone = () => {
     soundManager.playStart();

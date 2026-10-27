@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Smartphone, Monitor, Download, ArrowRight, Check, Loader2 } from 'lucide-react';
+import { Smartphone, Monitor, Download, ArrowRight, Loader2 } from 'lucide-react';
 
 interface LandingEcosystemProps {
   onEnterApp: () => void;
